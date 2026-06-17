@@ -1318,8 +1318,12 @@ def make_simulator_html(sim_walls: list, ifc_name: str,
     with open(template_path, encoding='utf-8') as f:
         html = f.read()
 
+    def _safe_json(obj):
+        """JSON을 HTML <script> 안에 안전하게 삽입: </script> 방지."""
+        return _json.dumps(obj, ensure_ascii=False).replace('</', '<\\/')
+
     # ── 벽 데이터 주입 ──
-    html = html.replace('__IFC_WALLS__', _json.dumps(sim_walls, ensure_ascii=False))
+    html = html.replace('__IFC_WALLS__', _safe_json(sim_walls))
 
     # ── STOREY_ORDER ──
     seen = []
@@ -1329,7 +1333,7 @@ def make_simulator_html(sim_walls: list, ifc_name: str,
             seen.append(s)
     std = ['GL', 'B3', 'B2', 'B1', '1F', '2F', '3F', '4F', '5F', 'RF']
     ordered = [s for s in std if s in seen] + [s for s in seen if s not in std]
-    html = html.replace('__STOREY_ORDER__', _json.dumps(ordered, ensure_ascii=False))
+    html = html.replace('__STOREY_ORDER__', _safe_json(ordered))
 
     # ── 벽 수 / 프로젝트명 ──
     wall_cnt = str(len(sim_walls))
@@ -1387,7 +1391,9 @@ def make_simulator_html(sim_walls: list, ifc_name: str,
                 'orient': r.get('layout', 'RTL'),
             }
         if precomputed:
-            pc_json = _json.dumps(precomputed, ensure_ascii=False)
-            html = html.replace('</body>', _sim_js_patch(pc_json) + '\n</body>')
+            pc_json = _safe_json(precomputed)
+            _last = html.rfind('</body>')
+            if _last != -1:
+                html = html[:_last] + _sim_js_patch(pc_json) + '\n</body>' + html[_last+7:]
 
     return html
