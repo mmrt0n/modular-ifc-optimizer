@@ -413,7 +413,7 @@ function switchMeasure(mat){
       <div class="step-info"><div class="step-nm">노치절단</div><div class="step-ht">개구부 겹침 · ㄱ·ㄴ형 1장</div></div>
       <div class="step-ct" id="sc4">—</div>
     </div>
-    <div class="step locked" id="s5">
+    <div class="step locked" id="s5" onclick="goStep(5)">
       <div class="step-n">5</div>
       <div class="step-info"><div class="step-nm">재사용</div><div class="step-ht">자투리 재활용</div></div>
       <div class="step-ct" id="sc5">—</div>
@@ -993,9 +993,10 @@ var STEP_DESCS = [
   '② 그리드: 보드를 어디서 나눌지 선을 긋는 단계입니다.\n🟢초록점선 = 보드 이음새 위치 (각재/스터드 공법에서는 각재가 여기에 세워짐, 450mm마다)\n🟠주황점선 = 개구부(문·창문) 좌우 경계선\n🟣보라점선 = 개구부 중심선 (이음새가 여기서 대칭으로 만나 모서리 균열 방지)',
   '③ 온장: 자르지 않고 보드 1장이 그대로 들어가는 자리 (석고보드 900×1800mm, 합판 1220×2440mm). 🟢초록색.',
   '④ 직선절단: 보드를 직선 1번만 잘라서 붙이는 자리.\n• 가장자리 자리 (보드 규격보다 좁거나 낮음)\n• 개구부가 보드 좌우 전체를 관통하는 경우\n• 개구부가 보드 위아래 전체를 관통하는 경우\n→ 이 세 경우 모두 직선 1번으로 해결됨. 🟡노란색.',
-  '⑤ 노치절단: 개구부 모서리에 걸치는 보드. ㄱ자/ㄴ자로 두 번 잘라서 1장으로 붙임.\n이음새는 개구부 중심에 대칭 배치 (모서리 균열 방지). 🟣보라색.'
+  '⑤ 노치절단: 개구부 모서리에 걸치는 보드. ㄱ자/ㄴ자로 두 번 잘라서 1장으로 붙임.\n이음새는 개구부 중심에 대칭 배치 (모서리 균열 방지). 🟣보라색.',
+  '⑥ 재사용: 다른 벽에서 발생한 자투리(leftover) 보드를 재활용한 자리.\nPython RTL 최적화가 자투리를 ReusePool에 저장 후 크기가 맞으면 신규 보드 대신 사용. 🔵파랑색.'
 ];
-var STEP_LBLS = ['①입력','②그리드','③온장','④직선절단','⑤노치절단'];
+var STEP_LBLS = ['①입력','②그리드','③온장','④직선절단','⑤노치절단','⑥재사용'];
 
 function goStep(s){
   if(!G.result) return;
@@ -1212,8 +1213,9 @@ function drawCV(cvId, r, cells, cMax, cMaxH, gridOff){
       inStep=bCount<=limit;
     } else {
       if(s===2) inStep=c.type==='full';
-      else if(s===3) inStep=c.type==='full'||c.type==='edge_cut'||c.type==='reuse';
-      else if(s===4) inStep=true;
+      else if(s===3) inStep=c.type==='full'||c.type==='edge_cut';
+      else if(s===4) inStep=c.type==='full'||c.type==='edge_cut'||c.type==='notch';
+      else if(s===5) inStep=true;
       }
 
     var cx=OX+c.x*sc, cy=OY+(H-c.y-c.h)*sc;
@@ -1568,17 +1570,18 @@ function aPlay(){
     G.bStep++;
     if(G.bStep>active.length){
       G.bAnim=false; G.bStep=-1; G.notchPhase=0;
-      G.step=4; hiStep(4);
+      var endStep=G.cells&&G.cells.some(function(c){return c.type==='reuse';})?5:4;
+      G.step=endStep; hiStep(endStep);
       document.getElementById('btnPlay').style.display='';
       document.getElementById('btnPause').style.display='none';
       document.getElementById('stepLbl').textContent='완료';
-      document.getElementById('stepDesc').textContent=STEP_DESCS[4];
+      document.getElementById('stepDesc').textContent=STEP_DESCS[endStep]||STEP_DESCS[4];
       drawAll(); return;
     }
     // 단계 자동 전환
     var cur=active[G.bStep-1];
     if(cur){
-      var ns=cur.type==='full'?2:cur.type==='edge_cut'?3:4;
+      var ns=cur.type==='full'?2:cur.type==='edge_cut'?3:cur.type==='reuse'?5:4;
       if(ns!==G.step){
         G.step=ns; hiStep(ns);
         document.getElementById('stepLbl').textContent=STEP_LBLS[ns]||'';
