@@ -49,38 +49,6 @@ def parse_floor(name: str):
     return None
 
 
-# ────────────────────────────────────────────
-# IFC 전체 추출
-# ────────────────────────────────────────────
-def extract_all(ifc):
-    """
-    IFC 파일에서 검증에 필요한 모든 정보를 추출.
-    반환: dict with keys walls, doors, windows, spaces, storeys, materials
-    """
-    print("  벽 추출 중...")
-    walls = _extract_walls(ifc)
-    print("  문/창 추출 중...")
-    doors, windows = _extract_fillers(ifc)
-    print("  공간 추출 중...")
-    spaces = _extract_spaces(ifc)
-    print("  층 추출 중...")
-    storeys = _extract_storeys(ifc)
-    print("  재료 추출 중...")
-    materials = _extract_materials(ifc)
-    print("  슬래브/기둥 추출 중...")
-    slabs = _extract_slabs(ifc)
-
-    return {
-        'walls': walls,
-        'doors': doors,
-        'windows': windows,
-        'spaces': spaces,
-        'storeys': storeys,
-        'materials': materials,
-        'slabs': slabs,
-        'schema': ifc.schema,
-        'extracted_at': datetime.now().isoformat(timespec='seconds'),
-    }
 
 
 def _get_storey_multi(element):
@@ -531,7 +499,7 @@ def _get_elem_mats(element):
 
 
 # ────────────────────────────────────────────
-# extract_all 업데이트
+# IFC 전체 추출
 # ────────────────────────────────────────────
 def extract_all(ifc):
     print("  벽 추출 중...")
@@ -1301,8 +1269,18 @@ def extract_by_regex(ifc_path):
     """
     result = {'ok': False}
     try:
-        with open(ifc_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
+        # IFC 파일 인코딩: UTF-8(최신) / EUC-KR(한국 구형 BIM) / Latin-1(서유럽) 순 시도
+        content = None
+        for _enc in ('utf-8', 'cp949', 'latin-1'):
+            try:
+                with open(ifc_path, 'r', encoding=_enc) as _f:
+                    content = _f.read()
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        if content is None:  # 모두 실패하면 강제 latin-1 (오류 없음)
+            with open(ifc_path, 'r', encoding='latin-1') as _f:
+                content = _f.read()
 
         # 수량 카운트
         for key, pat in _RE_ENTITY_CNT.items():
