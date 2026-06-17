@@ -1229,7 +1229,11 @@ def show_cross_dialog():
 # ────────────────────────────────────────────
 # 이중 추출 검증 (정규식 vs ifcopenshell)
 # ────────────────────────────────────────────
-_RE_ENTITY = {
+
+# IFC GlobalId: 22자 base64 문자열
+_GUID_PAT = r"'([0-9A-Za-z_$]{22})'"
+
+_RE_ENTITY_CNT = {
     'walls':    re.compile(r'=IFCWALL(?:STANDARDCASE|ELEMENTEDCASE)?\s*\(', re.IGNORECASE),
     'doors':    re.compile(r'=IFCDOOR\s*\(', re.IGNORECASE),
     'windows':  re.compile(r'=IFCWINDOW\s*\(', re.IGNORECASE),
@@ -1239,14 +1243,106 @@ _RE_ENTITY = {
     'openings': re.compile(r'=IFCOPENINGELEMENT\s*\(', re.IGNORECASE),
 }
 
+# GlobalId 추출: =IFC엔티티('22자_guid', ...)
+_RE_WALL_GUID = re.compile(
+    r'=IFCWALL(?:STANDARDCASE|ELEMENTEDCASE)?\s*\(\s*' + _GUID_PAT, re.IGNORECASE)
+_RE_DOOR_GUID = re.compile(r'=IFCDOOR\s*\(\s*' + _GUID_PAT, re.IGNORECASE)
+_RE_WIN_GUID  = re.compile(r'=IFCWINDOW\s*\(\s*' + _GUID_PAT, re.IGNORECASE)
+_RE_SPACE_GUID  = re.compile(r'=IFCSPACE\s*\(\s*' + _GUID_PAT, re.IGNORECASE)
+_RE_STOREY_GUID = re.compile(r'=IFCBUILDINGSTOREY\s*\(\s*' + _GUID_PAT, re.IGNORECASE)
+_RE_SLAB_GUID   = re.compile(r'=IFCSLAB\s*\(\s*' + _GUID_PAT, re.IGNORECASE)
+
+# IfcWall 계열 구분 카운트
+_RE_WALL_STD  = re.compile(r'=IFCWALLSTANDARDCASE\s*\(', re.IGNORECASE)
+_RE_WALL_ELEM = re.compile(r'=IFCWALLELEMENTEDCASE\s*\(', re.IGNORECASE)
+_RE_WALL_BARE = re.compile(r'=IFCWALL\s*\(', re.IGNORECASE)
+
+# IfcQuantityLength에서 길이·높이 치수값 추출
+# 형식: IFCQUANTITYLENGTH('높이',$,$,2800.);
+_RE_QTY_H = re.compile(
+    r"IFCQUANTITYLENGTH\s*\(\s*'(?:높이|Height)'\s*,[^,]*,[^,]*,\s*([\d.]+)",
+    re.IGNORECASE)
+_RE_QTY_L = re.compile(
+    r"IFCQUANTITYLENGTH\s*\(\s*'(?:기준선 길이|벽의 평균 길이|중심에서 벽의 길이|Length)'\s*,[^,]*,[^,]*,\s*([\d.]+)",
+    re.IGNORECASE)
+_RE_QTY_T = re.compile(
+    r"IFCQUANTITYLENGTH\s*\(\s*'(?:두께|Thickness)'\s*,[^,]*,[^,]*,\s*([\d.]+)",
+    re.IGNORECASE)
+
+# IfcRelVoidsElement: 개구부-벽 연결 수
+_RE_VOIDS = re.compile(r'=IFCRELVOIDSELEMENT\s*\(', re.IGNORECASE)
+# IfcRelFillsElement: 문/창-개구부 연결 수
+_RE_FILLS = re.compile(r'=IFCRELFILLSELEMENT\s*\(', re.IGNORECASE)
+
+
+def _dim_stats(values_mm):
+    """mm 단위 값 목록 → 통계 dict."""
+    if not values_mm:
+        return {'count': 0, 'min': None, 'max': None, 'avg': None}
+    vals = [v for v in values_mm if v > 0]
+    if not vals:
+        return {'count': 0, 'min': None, 'max': None, 'avg': None}
+    return {
+        'count': len(vals),
+        'min':   round(min(vals)),
+        'max':   round(max(vals)),
+        'avg':   round(sum(vals) / len(vals)),
+    }
+
+
 def extract_by_regex(ifc_path):
-    """IFC STEP 파일을 정규식으로 직접 파싱 — ifcopenshell과 완전히 독립적."""
+    """IFC STEP 파일을 정규식으로 직접 파싱 — ifcopenshell과 완전히 독립적.
+
+    반환 dict:
+      ok, error, walls, doors, windows, spaces, storeys, slabs, openings,
+      wall_subtypes, voids, fills,
+      guids_{walls,doors,windows,spaces,storeys,slabs},
+      dim_{H,L,T}  (IfcQuantityLength 기반 통계)
+    """
     result = {'ok': False}
     try:
         with open(ifc_path, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
-        for key, pat in _RE_ENTITY.items():
+
+        # 수량 카운트
+        for key, pat in _RE_ENTITY_CNT.items():
             result[key] = len(pat.findall(content))
+
+        # IfcWall 계열 세분화
+        n_std  = len(_RE_WALL_STD.findall(content))
+        n_elem = len(_RE_WALL_ELEM.findall(content))
+        n_bare = len(_RE_WALL_BARE.findall(content))
+        result['wall_subtypes'] = {
+            'IfcWall': n_bare,
+            'IfcWallStandardCase': n_std,
+            'IfcWallElementedCase': n_elem,
+        }
+
+        # IfcRelVoidsElement / IfcRelFillsElement
+        result['voids'] = len(_RE_VOIDS.findall(content))
+        result['fills'] = len(_RE_FILLS.findall(content))
+
+        # GlobalId 목록 추출
+        result['guids_walls']   = set(_RE_WALL_GUID.findall(content))
+        result['guids_doors']   = set(_RE_DOOR_GUID.findall(content))
+        result['guids_windows'] = set(_RE_WIN_GUID.findall(content))
+        result['guids_spaces']  = set(_RE_SPACE_GUID.findall(content))
+        result['guids_storeys'] = set(_RE_STOREY_GUID.findall(content))
+        result['guids_slabs']   = set(_RE_SLAB_GUID.findall(content))
+
+        # IfcQuantityLength 치수 통계 (단위: m → mm 변환 필요)
+        def _to_mm_vals(matches):
+            """IFC STEP 수치는 m 단위. 1 이하면 *1000, 아니면 그대로."""
+            result_mm = []
+            for m in matches:
+                v = float(m)
+                result_mm.append(v * 1000 if v < 100 else v)
+            return result_mm
+
+        result['dim_H'] = _dim_stats(_to_mm_vals(_RE_QTY_H.findall(content)))
+        result['dim_L'] = _dim_stats(_to_mm_vals(_RE_QTY_L.findall(content)))
+        result['dim_T'] = _dim_stats(_to_mm_vals(_RE_QTY_T.findall(content)))
+
         result['ok'] = True
     except Exception as e:
         result['error'] = str(e)
@@ -1254,16 +1350,21 @@ def extract_by_regex(ifc_path):
 
 
 def dual_verify(ifc_data, regex_data):
-    """ifcopenshell 추출값과 정규식 추출값을 비교해 신뢰도 판정."""
+    """ifcopenshell 추출값과 정규식 추출값을 비교해 신뢰도 판정.
+
+    반환: [{'field', 'ifs', 'regex', 'match', 'note', 'missing_in_regex', 'missing_in_ifs'}, ...]
+    """
     rows = []
     if not regex_data.get('ok'):
         rows.append({
             'field': '정규식 파싱 오류', 'ifs': '-', 'regex': '-',
             'match': False, 'note': regex_data.get('error', '알 수 없음'),
+            'missing_in_regex': [], 'missing_in_ifs': [],
         })
         return rows
 
-    checks = [
+    # ── 1. 수량 카운트 비교 ───────────────────────────────────────
+    entity_checks = [
         ('walls',   'walls',   '벽 (IfcWall*)'),
         ('doors',   'doors',   '문 (IfcDoor)'),
         ('windows', 'windows', '창 (IfcWindow)'),
@@ -1271,7 +1372,7 @@ def dual_verify(ifc_data, regex_data):
         ('storeys', 'storeys', '층 (IfcBuildingStorey)'),
         ('slabs',   'slabs',   '슬래브 (IfcSlab)'),
     ]
-    for ifc_key, re_key, label in checks:
+    for ifc_key, re_key, label in entity_checks:
         ifs_cnt = len(ifc_data.get(ifc_key, []))
         re_cnt  = regex_data.get(re_key, 0)
         rows.append({
@@ -1280,9 +1381,11 @@ def dual_verify(ifc_data, regex_data):
             'regex': re_cnt,
             'match': ifs_cnt == re_cnt,
             'note':  '',
+            'missing_in_regex': [],
+            'missing_in_ifs': [],
         })
 
-    # 개구부는 참조값 — 벽 내 개구부 합 vs 파일 내 전체 엔티티 수
+    # 개구부: 벽 내 합계 vs 파일 내 전체 엔티티
     ifs_ops = sum(len(w.get('openings', [])) for w in ifc_data.get('walls', []))
     re_ops  = regex_data.get('openings', 0)
     rows.append({
@@ -1290,8 +1393,94 @@ def dual_verify(ifc_data, regex_data):
         'ifs':   ifs_ops,
         'regex': re_ops,
         'match': ifs_ops == re_ops,
-        'note':  '벽 내 집계 vs 파일 내 전체 엔티티 (구조상 차이 가능)',
+        'note':  '벽 내 집계 vs 파일 전체 엔티티 (구조상 차이 가능)',
+        'missing_in_regex': [],
+        'missing_in_ifs': [],
     })
+
+    # IfcRelVoidsElement — 개구부-벽 연결 수 (참고용)
+    re_voids = regex_data.get('voids', 0)
+    rows.append({
+        'field': '개구부-벽 연결 (IfcRelVoidsElement)',
+        'ifs':   ifs_ops,   # 같아야 정상
+        'regex': re_voids,
+        'match': ifs_ops == re_voids,
+        'note':  '개구부 수와 일치해야 정상',
+        'missing_in_regex': [],
+        'missing_in_ifs': [],
+    })
+
+    # ── 2. GlobalId 목록 대조 ────────────────────────────────────
+    guid_checks = [
+        ('walls',   'guids_walls',   '벽 GlobalId 대조'),
+        ('doors',   'guids_doors',   '문 GlobalId 대조'),
+        ('windows', 'guids_windows', '창 GlobalId 대조'),
+        ('spaces',  'guids_spaces',  '공간 GlobalId 대조'),
+        ('storeys', 'guids_storeys', '층 GlobalId 대조'),
+        ('slabs',   'guids_slabs',   '슬래브 GlobalId 대조'),
+    ]
+    for ifc_key, re_key, label in guid_checks:
+        ifs_guids = set(e['id'] for e in ifc_data.get(ifc_key, []))
+        re_guids  = regex_data.get(re_key, set())
+        missing_re  = sorted(ifs_guids - re_guids)   # ifs에 있는데 regex에 없음
+        missing_ifs = sorted(re_guids - ifs_guids)   # regex에 있는데 ifs에 없음
+        match = (len(missing_re) == 0 and len(missing_ifs) == 0)
+        note = ''
+        if missing_re:
+            note += f'ifcopenshell에만 있음 {len(missing_re)}개'
+        if missing_ifs:
+            if note: note += ' / '
+            note += f'정규식에만 있음 {len(missing_ifs)}개'
+        rows.append({
+            'field': label,
+            'ifs':   len(ifs_guids),
+            'regex': len(re_guids),
+            'match': match,
+            'note':  note or '완전 일치',
+            'missing_in_regex': missing_re[:10],   # 최대 10개만 표시
+            'missing_in_ifs':   missing_ifs[:10],
+        })
+
+    # ── 3. 치수 분포 비교 ────────────────────────────────────────
+    def _ifs_dim_stats(walls, key):
+        vals = [float(w.get(key) or 0) for w in walls if w.get(key)]
+        return _dim_stats(vals)
+
+    walls = ifc_data.get('walls', [])
+    for dim_key, re_dim_key, label in [
+        ('H_mm', 'dim_H', '벽 높이 (IfcQuantityLength)'),
+        ('L_mm', 'dim_L', '벽 길이 (IfcQuantityLength)'),
+    ]:
+        ifs_st  = _ifs_dim_stats(walls, dim_key)
+        re_st   = regex_data.get(re_dim_key, {})
+        # 평균값 비교 (±10% 허용)
+        ifs_avg = ifs_st.get('avg') or 0
+        re_avg  = re_st.get('avg') or 0
+        if ifs_avg > 0 and re_avg > 0:
+            diff_pct = abs(ifs_avg - re_avg) / ifs_avg * 100
+            match    = diff_pct <= 10
+            note = (f"평균 일치 (±{round(diff_pct,1)}%)" if match
+                    else f"평균 차이 {round(diff_pct,1)}% — 단위 혼용 가능성")
+        elif ifs_avg == 0 and re_avg == 0:
+            match = True; note = '치수 데이터 없음'
+        else:
+            match = False
+            note = f'ifs avg={ifs_avg}mm / regex avg={re_avg}mm — 추출 실패 가능성'
+
+        ifs_disp = (f"avg {ifs_st['avg']}mm ({ifs_st['count']}개)"
+                    if ifs_st['count'] else '-')
+        re_disp  = (f"avg {re_st['avg']}mm ({re_st['count']}개)"
+                    if re_st.get('count') else '-')
+        rows.append({
+            'field': label,
+            'ifs':   ifs_disp,
+            'regex': re_disp,
+            'match': match,
+            'note':  note,
+            'missing_in_regex': [],
+            'missing_in_ifs': [],
+        })
+
     return rows
 
 
@@ -1302,29 +1491,38 @@ def _make_dual_html(dual):
 
     n_match   = sum(1 for r in dual if r['match'])
     n_total   = len(dual)
+    ratio     = n_match / n_total if n_total else 0
     all_match = n_match == n_total
-    trust_color = '#2e7d32' if all_match else ('#f57f17' if n_match >= n_total * 0.8 else '#c62828')
-    trust_label = '완전 일치 — 신뢰' if all_match else ('부분 불일치 — 주의' if n_match >= n_total * 0.8 else '불일치 — 검토 필요')
-    trust_icon  = '✅' if all_match else ('⚠' if n_match >= n_total * 0.8 else '❌')
+    trust_color = '#2e7d32' if all_match else ('#f57f17' if ratio >= 0.8 else '#c62828')
+    trust_label = '완전 일치 — 고신뢰' if all_match else ('부분 불일치 — 주의' if ratio >= 0.8 else '불일치 — 검토 필요')
+    trust_icon  = '✅' if all_match else ('⚠' if ratio >= 0.8 else '❌')
 
     summary = (
         f'<div class="stat-grid" style="margin-bottom:16px">'
-        f'<div class="stat-box" style="border-top:3px solid {trust_color};min-width:220px">'
-        f'<div class="num" style="color:{trust_color};font-size:1.3rem">{trust_icon} {trust_label}</div>'
-        f'<div class="lbl">두 방법 수량 일치: {n_match} / {n_total}개 항목</div></div>'
+        f'<div class="stat-box" style="border-top:3px solid {trust_color};min-width:260px">'
+        f'<div class="num" style="color:{trust_color};font-size:1.2rem">{trust_icon} {trust_label}</div>'
+        f'<div class="lbl">두 방법 항목 일치: {n_match} / {n_total}개</div></div>'
+        f'<div class="stat-box" style="border-top:3px solid #2e7d32">'
+        f'<div class="num" style="color:#2e7d32">{n_match}</div><div class="lbl">일치</div></div>'
+        f'<div class="stat-box" style="border-top:3px solid #c62828">'
+        f'<div class="num" style="color:#c62828">{n_total - n_match}</div><div class="lbl">불일치</div></div>'
         f'</div>'
     )
 
     verdict = (
-        '<div class="note">두 독립된 방법(ifcopenshell 파서 + 정규식 직접 파싱)의 추출 수량이 '
-        '<b>완전히 일치</b>합니다. 이 IFC 파일의 요소 수량을 신뢰할 수 있습니다.</div>'
+        '<div class="note"><b>✅ 완전 일치:</b> '
+        'ifcopenshell(스키마 파서) + 정규식(STEP 텍스트 직접 파싱) 두 방법의 '
+        'GlobalId·수량·치수 분포가 모두 일치합니다. 추출 결과를 신뢰할 수 있습니다.</div>'
         if all_match else
-        '<div class="note" style="border-left-color:#c62828">'
-        '일치하지 않는 항목이 있습니다. 비표준 IFC 엔티티 사용, 파일 구조 문제, 또는 '
-        'IfcWallStandardCase 등 서브타입 차이일 수 있습니다. BIM 뷰어에서 직접 확인하세요.</div>'
+        '<div class="note" style="border-left-color:#e65100">'
+        '<b>⚠ 불일치 항목 있음:</b> 비표준 IFC 서브타입(IfcWallStandardCase 등), '
+        '파일 인코딩 문제, 또는 파서 버전 차이일 수 있습니다. '
+        '아래 GlobalId 불일치 목록을 BIM 뷰어에서 직접 확인하세요.</div>'
     )
 
+    # 항목별 행 생성
     rows_html = ""
+    guid_detail_html = ""
     for r in dual:
         c  = '#2e7d32' if r['match'] else '#c62828'
         bg = '#e8f5e9' if r['match'] else '#ffebee'
@@ -1332,33 +1530,63 @@ def _make_dual_html(dual):
         rows_html += (
             f'<tr style="background:{bg}">'
             f'<td>{r["field"]}</td>'
-            f'<td style="text-align:center">{r["ifs"]}</td>'
-            f'<td style="text-align:center">{r["regex"]}</td>'
+            f'<td style="text-align:center;font-variant-numeric:tabular-nums">{r["ifs"]}</td>'
+            f'<td style="text-align:center;font-variant-numeric:tabular-nums">{r["regex"]}</td>'
             f'<td style="text-align:center;color:{c};font-weight:700">{ic}</td>'
-            f'<td style="font-size:.75rem;color:#666">{r["note"]}</td>'
+            f'<td style="font-size:.75rem;color:#555">{r["note"]}</td>'
             f'</tr>'
         )
 
+        # GlobalId 불일치 상세 블록
+        missing_re  = r.get('missing_in_regex', [])
+        missing_ifs = r.get('missing_in_ifs', [])
+        if missing_re or missing_ifs:
+            guid_detail_html += f'<div class="section-title" style="font-size:.88rem">{r["field"]} — GlobalId 불일치</div>'
+            if missing_re:
+                ids = ", ".join(f'<code>{g}</code>' for g in missing_re)
+                guid_detail_html += (
+                    f'<div style="background:#fff8e1;border-left:3px solid #f57f17;'
+                    f'padding:8px 12px;margin:4px 0;font-size:.78rem">'
+                    f'<b>ifcopenshell에만 있음 ({len(missing_re)}개):</b> {ids}'
+                    + (' …외 더 있음' if len(r.get('missing_in_regex', [])) >= 10 else '')
+                    + '</div>'
+                )
+            if missing_ifs:
+                ids = ", ".join(f'<code>{g}</code>' for g in missing_ifs)
+                guid_detail_html += (
+                    f'<div style="background:#fce4ec;border-left:3px solid #e91e63;'
+                    f'padding:8px 12px;margin:4px 0;font-size:.78rem">'
+                    f'<b>정규식에만 있음 ({len(missing_ifs)}개):</b> {ids}'
+                    + (' …외 더 있음' if len(r.get('missing_in_ifs', [])) >= 10 else '')
+                    + '</div>'
+                )
+
     table = (
-        f'<div class="section-title">추출 수량 비교</div>'
-        f'<table><thead><tr>'
-        f'<th>요소 유형</th>'
+        f'<div class="section-title">항목별 비교 결과</div>'
+        f'<div style="overflow-x:auto"><table><thead><tr>'
+        f'<th>검증 항목</th>'
         f'<th style="text-align:center">ifcopenshell</th>'
         f'<th style="text-align:center">정규식 파싱</th>'
         f'<th style="text-align:center">판정</th>'
         f'<th>비고</th>'
-        f'</tr></thead><tbody>{rows_html}</tbody></table>'
+        f'</tr></thead><tbody>{rows_html}</tbody></table></div>'
     )
+
+    guid_section = (
+        f'<div class="section-title" style="margin-top:18px">GlobalId 불일치 상세</div>'
+        + guid_detail_html
+    ) if guid_detail_html else ''
 
     method_note = (
         '<div class="note" style="margin-top:14px">'
-        '<b>검증 방법:</b> '
-        '① ifcopenshell — IFC 스키마를 완전히 파싱해 객체 그래프로 수량 집계 &nbsp;|&nbsp; '
-        '② 정규식 — IFC STEP 텍스트에서 <code>=IFC엔티티명(</code> 패턴을 직접 카운트. '
-        '두 방법이 독립적으로 동일한 수량을 반환하면 추출 결과를 신뢰할 수 있습니다.</div>'
+        '<b>이중 검증 방법 3단계:</b><br>'
+        '① <b>수량 대조</b> — 두 방법이 같은 엔티티 수를 반환하는지 확인<br>'
+        '② <b>GlobalId 대조</b> — 각 엔티티의 22자 GUID를 목록으로 추출해 교집합·차집합 계산 → 누락/추가 요소 식별<br>'
+        '③ <b>치수 분포 대조</b> — IfcQuantityLength에서 높이·길이 평균을 추출해 ifcopenshell 추출값과 ±10% 이내인지 확인'
+        '</div>'
     )
 
-    return verdict + summary + table + method_note
+    return verdict + summary + table + guid_section + method_note
 
 
 def run_cross_checks(data, expected):
