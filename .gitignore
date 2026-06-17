@@ -8,9 +8,12 @@ dist/
 build/
 *.spec.bak
 
-# PyInstaller 빌드 산출물 (EXE는 GitHub에 올리지 않음 - 71MB)
-dist/
+# PyInstaller 빌드 중간산출물
 build/
+dist/*.pkg
+dist/*.spec
+
+# EXE는 LFS로 포함
 
 # 임시 파일
 *.zip
