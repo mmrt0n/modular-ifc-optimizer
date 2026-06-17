@@ -1,0 +1,2329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>석고보드·합판 배치 시스템 v14</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07090F;--s1:#0E1420;--s2:#141C2A;--s3:#1A2234;
+  --bd:#1C2A3E;--bd2:#243550;
+  --t1:#C8D8EC;--t2:#5A7A9A;--t3:#2A3E58;
+  --blue:#3A8EFF;--green:#26BE78;--amber:#ECBA30;
+  --red:#F04848;--purple:#7A6EE8;
+  --FULL_BG:#163A28;--FULL_ST:#26BE78;
+  --EDGE_BG:#3A2800;--EDGE_ST:#ECBA30;
+  --NOTCH_BG:#1E1050;--NOTCH_ST:#7A6EE8;
+  --REUSE_BG:#0A2040;--REUSE_ST:#3A8EFF;
+  --mono:'DM Mono',monospace;
+}
+body{background:var(--bg);color:var(--t1);font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;font-size:12px;min-height:100vh}
+
+/* 헤더 */
+header{height:46px;background:var(--s1);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 18px;gap:10px;position:sticky;top:0;z-index:200}
+.logo{width:26px;height:26px;background:linear-gradient(135deg,var(--blue),var(--purple));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.title{font-size:13px;font-weight:700}
+.sub{font-size:9px;color:var(--t2);font-family:var(--mono);margin-left:4px}
+.hdr-r{margin-left:auto;display:flex;gap:5px}
+
+/* 레이아웃 */
+.layout{display:grid;grid-template-columns:256px 1fr 252px;min-height:calc(100vh - 46px)}
+.col{background:var(--s1);padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.col-l{border-right:1px solid var(--bd)}
+.col-r{border-left:1px solid var(--bd)}
+.col-m{padding:14px;overflow-y:auto}
+
+/* 섹션 */
+.lbl{font-size:9px;font-weight:700;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px;display:flex;align-items:center;gap:4px}
+.lbl::after{content:'';flex:1;height:1px;background:var(--bd)}
+
+/* 입력 */
+select,input{width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:5px;padding:5px 8px;color:var(--t1);font-size:11px;outline:none;transition:border .12s;font-family:inherit}
+select:focus,input:focus{border-color:var(--blue)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
+
+/* 벽 목록 */
+.wall-list{max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.wi{padding:5px 8px;border-radius:4px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;transition:all .1s;font-size:10px}
+.wi:hover{border-color:var(--t2)}
+.wi.on{border-color:var(--blue);background:rgba(58,142,255,.1)}
+.wi-name{font-weight:600;font-size:11px;display:flex;align-items:center;gap:4px}
+.wi-op{color:var(--amber);font-size:9px}
+.wi-dim{color:var(--t2);font-family:var(--mono);margin-top:1px;font-size:9px}
+
+/* 층 바 */
+.storey-bars{display:flex;flex-direction:column;gap:3px}
+.sb{display:flex;align-items:center;gap:6px;padding:3px 5px;border-radius:4px;cursor:pointer;transition:all .12s}
+.sb:hover,.sb.on{background:rgba(58,142,255,.08)}
+.sb.on .sb-name{color:var(--blue)}
+.sb-name{font-size:10px;font-family:var(--mono);min-width:22px;color:var(--t2)}
+.sb-bar{flex:1;height:14px;background:var(--s3);border-radius:3px;overflow:hidden}
+.sb-fill{height:100%;background:rgba(58,142,255,.35);border-radius:3px;transition:width .3s}
+.sb-cnt{font-size:9px;color:var(--t3);font-family:var(--mono);min-width:26px;text-align:right}
+
+/* 공법 */
+.meth-g{display:flex;flex-direction:column;gap:2px}
+.meth{padding:6px 8px;border-radius:4px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;display:flex;align-items:center;gap:7px;color:var(--t2);transition:all .12s;font-size:11px;font-family:inherit}
+.meth.on{border-color:var(--blue);background:rgba(58,142,255,.08);color:var(--blue)}
+.meth .mi{font-size:15px}
+.meth .mt{font-weight:600}
+.meth .ms{font-size:9px;color:var(--t3);margin-top:1px}
+
+/* 1P/2P */
+.ply-g{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.ply{padding:6px;border-radius:4px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;text-align:center;color:var(--t2);transition:all .12s;font-size:11px;font-weight:600;font-family:inherit}
+.ply.on{border-color:var(--amber);background:rgba(236,186,48,.08);color:var(--amber)}
+.ply .pi{font-size:14px;margin-bottom:2px}
+
+/* 버튼 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:none;border-radius:5px;cursor:pointer;font-weight:600;font-size:11px;padding:7px 11px;transition:all .12s;font-family:inherit;white-space:nowrap}
+.btn-run{background:var(--blue);color:#040810;width:100%;font-size:12px;padding:9px}
+.btn-run:hover{filter:brightness(1.1)}
+.btn-g{background:transparent;border:1px solid var(--bd);color:var(--t2)}
+.btn-g:hover{border-color:var(--blue);color:var(--blue)}
+.btn-sm{padding:4px 8px;font-size:10px}
+
+/* 알림 */
+.note{border-radius:4px;padding:5px 8px;font-size:10px;line-height:1.5}
+.note-blue{background:rgba(58,142,255,.08);border:1px solid rgba(58,142,255,.18);color:var(--blue)}
+.note-amber{background:rgba(236,186,48,.08);border:1px solid rgba(236,186,48,.18);color:var(--amber)}
+
+/* 플로우 단계 */
+.steps{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+.step{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:5px;border:1px solid var(--bd);cursor:pointer;transition:all .12s;background:var(--s2)}
+.step:hover{border-color:var(--t2)}
+.step.active{border-color:var(--blue);background:rgba(58,142,255,.07)}
+.step.done{border-color:var(--green);opacity:.55}
+.step.locked{opacity:.28;cursor:default;pointer-events:none}
+.step-n{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:var(--mono);flex-shrink:0;background:var(--s3);color:var(--t2)}
+.step.active .step-n{background:var(--blue);color:#040810}
+.step.done .step-n{background:var(--green);color:#040810}
+.step-info{flex:1}
+.step-nm{font-size:11px;font-weight:600}
+.step-ht{font-size:9px;color:var(--t2);margin-top:1px}
+.step-ct{font-size:10px;font-family:var(--mono);color:var(--t2);flex-shrink:0}
+
+/* 캔버스 */
+.cv-wrap{background:var(--s1);border:1px solid var(--bd);border-radius:7px;overflow:hidden;margin-bottom:10px}
+.cv-bar{padding:7px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:6px;background:var(--s2);flex-wrap:wrap}
+.cv-title{font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cv-body{padding:10px;background:var(--bg);overflow:auto;display:flex;gap:12px;align-items:flex-start;min-height:160px}
+.layer-wrap{display:flex;flex-direction:column;align-items:center;gap:4px}
+.layer-lbl{font-size:9px;color:var(--t2);font-family:var(--mono);background:var(--s2);padding:2px 7px;border-radius:3px}
+
+/* 애니 컨트롤 */
+.anim-ctrl{display:none;background:var(--s1);border:1px solid var(--bd);border-radius:7px;padding:10px;margin-bottom:10px}
+.anim-btns{display:flex;gap:4px;margin-bottom:7px;align-items:center}
+.anim-prog-wrap{flex:1;height:3px;background:var(--bd);border-radius:2px;overflow:hidden}
+.anim-prog{height:100%;background:var(--blue);border-radius:2px;transition:width .15s}
+.anim-ind{font-size:10px;color:var(--t2);font-family:var(--mono);min-width:80px;text-align:right}
+.speed-row{display:flex;align-items:center;gap:7px}
+.speed-row input[type=range]{flex:1;height:3px;accent-color:var(--blue)}
+.cmp-card{background:var(--s1);border:1px solid var(--bd);border-radius:7px;padding:12px;margin-bottom:10px;display:none}
+.cmp-title{font-size:11px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.cmp-cols{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-bottom:8px}
+.cmp-col{background:var(--s2);border:1px solid var(--bd);border-radius:5px;padding:8px;font-size:10px}
+.cmp-col.active{border-color:var(--blue);background:rgba(58,142,255,.07)}
+.cmp-row{display:flex;justify-content:space-between;padding:1px 0}
+.cmp-k{color:var(--t2)}.cmp-v{font-weight:600;font-family:var(--mono)}
+.cmp-vs{font-size:14px;font-weight:700;color:var(--t3);text-align:center}
+.diff-tag{font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px}
+.diff-good{background:rgba(38,190,120,.15);color:var(--green)}
+.diff-bad{background:rgba(240,72,72,.15);color:var(--red)}
+.diff-same{background:rgba(90,122,154,.15);color:var(--t2)}
+.cmp-btns{display:flex;gap:5px}
+.speed-lbl{font-size:10px;color:var(--t2);font-family:var(--mono);min-width:40px}
+
+/* 범례 */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.le{display:flex;align-items:center;gap:3px;font-size:10px;color:var(--t2)}
+.le-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+
+/* 메트릭 */
+.mc-g{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px}
+.mc{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:8px 10px}
+.mc-v{font-size:17px;font-weight:700;font-family:var(--mono);line-height:1;margin-bottom:2px}
+.mc-l{font-size:9px;color:var(--t2)}
+.mc-d{font-size:9px;color:var(--t3);margin-top:1px}
+.c-blue{color:var(--blue)}.c-green{color:var(--green)}.c-amber{color:var(--amber)}
+
+/* 단계 설명 */
+.step-desc{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:9px;font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:8px;min-height:54px}
+
+/* ── 전체 요약 카드 ── */
+.sum-card{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;min-width:70px;text-align:center;flex:1}
+.sum-card-wide{min-width:130px;flex:2}
+.sum-v{font-size:15px;font-weight:800;font-family:var(--mono);line-height:1.2;margin-bottom:2px}
+.sum-l{font-size:9px;color:var(--t2);line-height:1.3}
+/* 벽 정보 */
+.wall-info{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:9px;font-size:10px;line-height:1.7}
+.wi-row{display:flex;justify-content:space-between}
+.wi-key{color:var(--t2)}.wi-val{font-weight:600;font-family:var(--mono);color:var(--t1);font-size:10px}
+.op-tag{border-left:2px solid var(--amber);padding:2px 6px;margin-top:2px;font-size:9px;color:var(--amber);font-family:var(--mono)}
+
+/* 보드 목록 */
+.board-list{max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.bi{background:var(--s2);border-left:2px solid var(--bd);border-radius:0 4px 4px 0;padding:4px 7px;display:flex;align-items:center;gap:6px;font-size:9px}
+.bi.full{border-left-color:var(--FULL_ST)}.bi.edge_cut{border-left-color:var(--EDGE_ST)}.bi.notch{border-left-color:var(--NOTCH_ST)}.bi.reuse{border-left-color:var(--REUSE_ST)}.bi.cur{box-shadow:0 0 0 1px var(--blue)}
+.bi-code{font-family:var(--mono);font-weight:700;min-width:56px}
+.bi-type{min-width:48px;font-weight:600}
+
+.rb-loc{color:var(--t3);margin-top:1px}
+
+/* 전체 프로젝트 */
+.proj-panel{display:none;background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:12px;margin-bottom:10px}
+.proj-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.proj-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px}
+.ps{background:var(--s1);border:1px solid var(--bd);border-radius:5px;padding:7px 9px;text-align:center}
+.ps-v{font-size:16px;font-weight:700;font-family:var(--mono);line-height:1;margin-bottom:2px}
+.ps-l{font-size:9px;color:var(--t2)}
+.proj-prog{height:4px;background:var(--bd);border-radius:2px;margin-bottom:8px;overflow:hidden}
+.proj-bar{height:100%;background:var(--blue);border-radius:2px;transition:width .2s}
+.proj-list{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.pr{padding:5px 8px;border-radius:4px;background:var(--s1);border-left:2px solid var(--bd);cursor:pointer;display:flex;align-items:center;gap:6px;font-size:10px;transition:all .1s}
+.pr:hover{background:var(--s2)}.pr.has-r{border-left-color:var(--blue)}
+.rf-wrap{max-height:100px;overflow-y:auto;font-size:9px;margin-bottom:5px}
+.rf{display:flex;align-items:center;gap:5px;padding:2px 0;border-bottom:1px solid var(--bd);color:var(--t2)}
+.rf:last-child{border:none}
+.rf-from{color:var(--amber)}.rf-to{color:var(--blue)}.rf-arr{color:var(--t3)}
+
+/* 구분선 */
+hr{border:none;border-top:1px solid var(--bd);margin:2px 0}
+
+/* 스크롤 */
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+</style>
+</head>
+
+<!-- 측정 메저 비교 모달 -->
+<div id="compareModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.75);z-index:500;overflow-y:auto">
+  <div style="background:#0E1420;border:1px solid #1C2A3E;border-radius:10px;max-width:720px;margin:40px auto;padding:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:700">📊 측정 메저 비교 — __WALL_COUNT__개 벽 전체</div>
+      <button onclick="document.getElementById('compareModal').style.display='none'" style="background:transparent;border:1px solid #1C2A3E;color:#5A7A9A;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px">✕ 닫기</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button id="mTab-gyp" onclick="switchMeasure('gyp')" style="padding:5px 16px;border-radius:4px;border:1px solid #3A8EFF;background:rgba(58,142,255,.15);color:#3A8EFF;cursor:pointer;font-size:11px;font-weight:600">🪟 석고보드</button>
+      <button id="mTab-ply" onclick="switchMeasure('ply')" style="padding:5px 16px;border-radius:4px;border:1px solid #1C2A3E;background:transparent;color:#5A7A9A;cursor:pointer;font-size:11px;font-weight:600">🪵 합판</button>
+    </div>
+    <div id="m-gyp">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px">
+        <thead><tr style="background:#141C2A;border-bottom:2px solid #1C2A3E">
+          <th style="padding:9px 10px;text-align:left;color:#5A7A9A;width:26%">항목</th>
+          <th style="padding:9px 10px;text-align:center;color:#888">기본 방식<br><span style="font-size:9px;font-weight:400">전체면적 ÷ 보드면적</span></th>
+          <th style="padding:9px 10px;text-align:center;color:#3A8EFF">우리 시스템<br><span style="font-size:9px;font-weight:400">실제 그리드 1장씩 계산</span></th>
+        </tr></thead>
+        <tbody id="m-gyp-body"><tr><td colspan="3" style="text-align:center;padding:20px;color:#5A7A9A">⏳ 버튼 클릭 시 641개 벽 실시간 계산</td></tr></tbody>
+      </table>
+    </div>
+    <div id="m-ply" style="display:none">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px">
+        <thead><tr style="background:#141C2A;border-bottom:2px solid #1C2A3E">
+          <th style="padding:9px 10px;text-align:left;color:#5A7A9A;width:26%">항목</th>
+          <th style="padding:9px 10px;text-align:center;color:#888">기본 방식<br><span style="font-size:9px;font-weight:400">전체면적 ÷ 보드면적</span></th>
+          <th style="padding:9px 10px;text-align:center;color:#3A8EFF">우리 시스템<br><span style="font-size:9px;font-weight:400">실제 그리드 1장씩 계산</span></th>
+        </tr></thead>
+        <tbody id="m-ply-body"><tr><td colspan="3" style="text-align:center;padding:20px;color:#5A7A9A">⏳ 버튼 클릭 시 641개 벽 실시간 계산</td></tr></tbody>
+      </table>
+    </div>
+    <div style="background:#141C2A;border-radius:6px;padding:10px;font-size:10px;color:#5A7A9A;line-height:1.7">
+      ※ 우리 시스템 로스율이 높은 이유: 641개 벽 중 높이 1800mm 배수 = 0개 → 모든 벽 마지막 행 전부 직선절단.<br>기본 방식은 단순 나눗셈으로 이를 무시해 <span style="color:#F04848">과소 추산</span>. 우리 시스템은 <span style="color:#3A8EFF">실제 절단 수 정확 반영</span>.
+    </div>
+  </div>
+</div>
+
+<script>
+function switchMeasure(mat){
+  var isGyp=mat==='gyp';
+  document.getElementById('mTab-gyp').style.background=isGyp?'rgba(58,142,255,.15)':'transparent';
+  document.getElementById('mTab-gyp').style.color=isGyp?'#3A8EFF':'#5A7A9A';
+  document.getElementById('mTab-gyp').style.borderColor=isGyp?'#3A8EFF':'#1C2A3E';
+  document.getElementById('mTab-ply').style.background=!isGyp?'rgba(58,142,255,.15)':'transparent';
+  document.getElementById('mTab-ply').style.color=!isGyp?'#3A8EFF':'#5A7A9A';
+  document.getElementById('mTab-ply').style.borderColor=!isGyp?'#3A8EFF':'#1C2A3E';
+  document.getElementById('m-gyp').style.display=isGyp?'':'none';
+  document.getElementById('m-ply').style.display=isGyp?'none':'';
+}
+</script>
+
+<body>
+<header>
+  <div class="logo">🏗</div>
+  <span class="title">석고보드·합판 배치 시스템 v14 — 통합</span>
+  <span class="sub">광건기숙사 · 584개 벽 · 팀 통합 v14</span>
+  <div class="hdr-r">
+    <button class="btn btn-g btn-sm" onclick="showCompare()" style="border-color:var(--amber);color:var(--amber)">📊 메저 비교</button>
+    <button class="btn btn-g btn-sm" onclick="runProjectMode()">🏗 전체 프로젝트</button>
+    <button class="btn btn-g btn-sm" onclick="exportLayout()" style="border-color:var(--green);color:var(--green)">📐 시공전개도</button><button class="btn btn-g btn-sm" onclick="exportR()">⬇ CSV 발주</button><button class="btn btn-g btn-sm" onclick="exportJSON()">⬇ JSON</button>
+  </div>
+
+<button class="btn btn-g btn-sm" onclick="exportSingleWallEvaluationJSON_V3()" style="border-color:#7ecfff;color:#7ecfff">⬇ 벽 평가JSON</button>
+<button class="btn btn-g btn-sm" onclick="exportProjectEvaluationJSON_V3()" style="border-color:#26BE78;color:#26BE78">⬇ 프로젝트 평가JSON</button>
+</header>
+
+<div class="layout">
+
+<!-- ━━ 좌측 ━━ -->
+<div class="col col-l">
+
+  <div>
+    <div class="lbl">층별 분포</div>
+    <div class="storey-bars" id="storeyBars"></div>
+  </div>
+
+  <div>
+    <div class="lbl">벽 선택</div>
+    <div class="g2" style="margin-bottom:4px">
+      <input id="srch" placeholder="이름 검색" oninput="filterWalls()">
+      <select id="fOp" onchange="filterWalls()">
+        <option value="">전체</option>
+        <option value="y">개구부 있음</option>
+        <option value="n">개구부 없음</option>
+      </select>
+    </div>
+    <div style="font-size:9px;color:var(--t2);margin-bottom:3px" id="wCnt">__WALL_COUNT__개</div>
+    <div class="wall-list" id="wallList"></div>
+  </div>
+
+  <hr>
+
+  <div>
+    <div class="lbl">시공 공법</div>
+    <div class="meth-g">
+      <div class="meth" id="m-float" onclick="setM('float')">
+        <span class="mi">🧱</span>
+        <div><div class="mt">떠붙임</div><div class="ms">콘크리트 직접 접착 · 그리드 없음</div></div>
+      </div>
+      <div class="meth on" id="m-wood" onclick="setM('wood')">
+        <span class="mi">🪵</span>
+        <div><div class="mt">각재 450mm</div><div class="ms">나무각재 · 타카 · 이음새 각재 위</div></div>
+      </div>
+      <div class="meth" id="m-stud" onclick="setM('stud')">
+        <span class="mi">⚙️</span>
+        <div><div class="mt">스터드 450mm</div><div class="ms">철트러스 · 나사 · 동일 로직</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="lbl">시공 겹수</div>
+    <div class="ply-g">
+      <div class="ply on" id="ply1" onclick="setPly(1)">
+        <div class="pi">📄</div><div>1P</div>
+        <div style="font-size:9px;color:var(--t3)">기준점 바로 시작</div>
+      </div>
+      <div class="ply" id="ply2" onclick="setPly(2)">
+        <div class="pi">📋</div><div>2P</div>
+        <div style="font-size:9px;color:var(--t3)">450mm 오프셋</div>
+      </div>
+    </div>
+    <div class="note note-blue" id="plyNote" style="margin-top:4px">1P: 기준점에서 바로 시작</div>
+  </div>
+
+  <div>
+    <div class="lbl">자재 설정</div>
+    <div style="margin-bottom:5px">
+      <div style="font-size:10px;color:var(--t2);margin-bottom:3px">자재 종류</div>
+      <div class="g2">
+        <div class="meth on" id="mat-gyp" onclick="setMat('gyp')" style="padding:5px 8px;font-size:10px">
+          <span>🪟</span><div><div style="font-weight:600">석고보드</div><div style="font-size:9px;color:var(--t3)">900×1,800mm</div></div>
+        </div>
+        <div class="meth" id="mat-ply" onclick="setMat('ply')" style="padding:5px 8px;font-size:10px">
+          <span>🪵</span><div><div style="font-weight:600">합판</div><div style="font-size:9px;color:var(--t3)">1,220×2,440mm</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="g2">
+      <div>
+        <div style="font-size:10px;color:var(--t2);margin-bottom:3px">할증률</div>
+        <select id="markup" style="border-color:var(--amber)"><option value="5">5% (최소)</option><option value="6">6%</option><option value="7" selected>7% (권장)</option><option value="8">8% (최대)</option></select>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--t2);margin-bottom:3px">시공 방향</div>
+        <select id="orient"><option value="auto">자동</option><option value="v">세로</option><option value="h">가로</option></select>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-run" onclick="run()">▶ 시뮬레이션 실행</button>
+
+  <!-- 속도 조절 — 항상 보임 -->
+  <div>
+    <div class="lbl">재생 속도</div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--bd);border-radius:5px;padding:7px 10px">
+      <span style="font-size:10px;color:var(--t3)">빠름</span>
+      <input type="range" id="speedRange" min="80" max="1500" value="350" step="50"
+        style="flex:1;height:4px;accent-color:var(--blue);cursor:pointer"
+        oninput="G.speed=+this.value;document.getElementById('speedLbl').textContent=this.value+'ms'">
+      <span style="font-size:10px;color:var(--t3)">느림</span>
+      <span style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--blue);min-width:48px;text-align:right" id="speedLbl">350ms</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ━━ 중앙 ━━ -->
+<div class="col-m">
+
+  <!-- 전체 프로젝트 패널 -->
+  <div class="proj-panel" id="projPanel">
+    <div class="proj-hdr">
+      <span style="font-size:12px;font-weight:700">🏗 전체 프로젝트 재사용 분석</span>
+      <span style="font-size:10px;color:var(--t2)" id="projStatus">대기</span>
+    </div>
+    <div class="proj-prog"><div class="proj-bar" id="projBar" style="width:0%"></div></div>
+    <div class="proj-stats">
+      <div class="ps"><div class="ps-v c-blue" id="psTot">—</div><div class="ps-l">총 발주</div></div>
+      <div class="ps"><div class="ps-v" id="psCuts">—</div><div class="ps-l">총 절단 횟수</div></div>
+      <div class="ps"><div class="ps-v" id="psLossAvg">—</div><div class="ps-l">평균 로스율</div></div>
+      <div class="ps"><div class="ps-v" id="psDir">—</div><div class="ps-l">세로/가로</div></div>
+      <div class="ps"><div class="ps-v" id="psLoss">—</div><div class="ps-l">전체 로스율</div></div>
+      <div class="ps"><div class="ps-v" id="psPal">—</div><div class="ps-l">총 파레트</div></div>
+    </div>
+    <div class="rf-wrap" id="projFlow"></div>
+    <div style="font-size:10px;font-weight:600;color:var(--t2);margin:6px 0 4px">벽별 결과</div>
+    <div class="proj-list" id="projList"></div>
+    <button class="btn btn-g btn-sm" style="margin-top:8px;width:100%" onclick="closeProjPanel()">✕ 닫기</button>
+  </div>
+
+  <!-- 플로우 단계 -->
+  <div class="steps" id="steps">
+    <div class="step locked" id="s0" onclick="goStep(0)">
+      <div class="step-n">0</div>
+      <div class="step-info"><div class="step-nm">입력</div><div class="step-ht">벽 윤곽선 + 개구부만</div></div>
+    </div>
+    <div class="step locked" id="s1" onclick="goStep(1)">
+      <div class="step-n">1</div>
+      <div class="step-info"><div class="step-nm">그리드 설정</div><div class="step-ht">격자선만 표시 · 보드 없음</div></div>
+    </div>
+    <div class="step locked" id="s2" onclick="goStep(2)">
+      <div class="step-n">2</div>
+      <div class="step-info"><div class="step-nm">온장 배치</div><div class="step-ht">정확히 900×1800mm 셀만</div></div>
+      <div class="step-ct" id="sc2">—</div>
+    </div>
+    <div class="step locked" id="s3" onclick="goStep(3)">
+      <div class="step-n">3</div>
+      <div class="step-info"><div class="step-nm">직선절단</div><div class="step-ht">가장자리 · 300mm 보장</div></div>
+      <div class="step-ct" id="sc3">—</div>
+    </div>
+    <div class="step locked" id="s4" onclick="goStep(4)">
+      <div class="step-n">4</div>
+      <div class="step-info"><div class="step-nm">노치절단</div><div class="step-ht">개구부 겹침 · ㄱ·ㄴ형 1장</div></div>
+      <div class="step-ct" id="sc4">—</div>
+    </div>
+    <div class="step locked" id="s5">
+      <div class="step-n">5</div>
+      <div class="step-info"><div class="step-nm">재사용</div><div class="step-ht">자투리 재활용</div></div>
+      <div class="step-ct" id="sc5">—</div>
+    </div>
+  </div>
+
+  <!-- 범례 + 색상 설명 -->
+  <div class="legend">
+    <div class="le" title="보드 1장 그대로 부착. 900×1800mm(석고) / 1220×2440mm(합판) 정규격."><div class="le-dot" style="background:var(--FULL_ST)"></div>🟢 온장</div>
+    <div class="le" title="1회 직선으로 자른 보드. 가장자리이거나 개구부가 보드 전체 폭/높이를 관통하는 경우."><div class="le-dot" style="background:var(--EDGE_ST)"></div>🟡 직선절단</div>
+    <div class="le" title="ㄱ/ㄴ자로 자른 보드. 개구부 모서리에 걸치는 경우. 이음새는 개구부 중심에서 대칭으로 배치(균열 방지)."><div class="le-dot" style="background:var(--NOTCH_ST)"></div>🟣 노치절단</div>
+    <div class="le" title="다른 벽 자투리(leftover)를 재사용한 보드. Python RTL 최적화 결과."><div class="le-dot" style="background:var(--REUSE_ST)"></div>🔵 재사용</div>
+    <div class="le" title="문/창문 위치. 보드를 붙이지 않는 빈 공간."><div class="le-dot" style="background:var(--s3);border:1px dashed var(--t3)"></div>⬜ 개구부</div>
+    <div class="le" id="gridLeg" style="display:none" title="보드 이음새 위치(각재/스터드 시공 시 각재가 서 있는 위치)."><div class="le-dot" style="background:transparent;border:1px dashed var(--green);opacity:.5"></div>🟩 그리드</div>
+  </div>
+  <div style="font-size:9px;color:var(--t3);padding:2px 4px 6px;line-height:1.5">
+    마우스를 올리면 각 색상 설명이 표시됩니다
+  </div>
+
+  <!-- 캔버스 -->
+  <div class="cv-wrap">
+    <div class="cv-bar">
+      <span class="cv-title" id="cvTitle">벽을 선택하고 실행하세요</span>
+      <button class="btn btn-g btn-sm" onclick="zI()">+</button>
+      <button class="btn btn-g btn-sm" onclick="zO()">−</button>
+      <button class="btn btn-g btn-sm" onclick="zR()">↺</button>
+      <span style="font-size:9px;color:var(--t2);font-family:var(--mono)" id="stepLbl"></span>
+    </div>
+    <div class="cv-body" id="cvBody">
+      <div id="wallBadge" style="display:none;padding:8px 12px;background:var(--s2);border-bottom:1px solid var(--bd);border-radius:8px 8px 0 0;flex-wrap:wrap;align-items:center;gap:6px"></div>
+  <div id="cvEmpty" style="color:var(--t3);font-size:11px;padding:20px">← 좌측에서 벽을 선택하고 실행하세요</div>
+      <div class="layer-wrap" id="wrap1" style="display:none">
+        <span class="layer-lbl" id="lbl1">1P</span>
+        <canvas id="cv1"></canvas>
+      </div>
+      <div class="layer-wrap" id="wrap2" style="display:none">
+        <span class="layer-lbl">2P</span>
+        <canvas id="cv2"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 애니메이션 컨트롤 -->
+  <div class="anim-ctrl" id="animCtrl">
+    <div class="anim-btns">
+      <button class="btn btn-g btn-sm" onclick="aPrev()">◀</button>
+      <button class="btn btn-g btn-sm" id="btnPlay" onclick="aPlay()">▶ 재생</button>
+      <button class="btn btn-g btn-sm" id="btnPause" style="display:none" onclick="aPause()">⏸</button>
+      <button class="btn btn-g btn-sm" onclick="aNext()">▶</button>
+      <button class="btn btn-g btn-sm" onclick="aReset()">↺</button>
+      <div class="anim-prog-wrap"><div class="anim-prog" id="animProg" style="width:0%"></div></div>
+      <span class="anim-ind" id="animInd">—</span>
+    </div>
+  </div>
+
+  <!-- 속도 조절 슬라이더 — 항상 표시 -->
+  <div style="background:var(--s1);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+    <span style="font-size:10px;color:var(--t2);flex-shrink:0">⏱ 속도</span>
+    <span style="font-size:9px;color:var(--t3)">빠름</span>
+    <input type="range" id="speedRange" min="80" max="1500" value="350" step="50"
+      style="flex:1;height:4px;accent-color:var(--blue);cursor:pointer"
+      oninput="G.speed=+this.value;document.getElementById('speedLbl').textContent=this.value+'ms'">
+    <span style="font-size:9px;color:var(--t3)">느림</span>
+    <span style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--blue);min-width:44px;text-align:right" id="speedLbl">350ms</span>
+  </div>
+
+</div>
+
+<!-- ━━ 우측 ━━ -->
+<div class="col col-r">
+
+  <div>
+    <div class="lbl">선택 벽 정보</div>
+    <div class="wall-info" id="wallInfo"><div style="color:var(--t3)">벽을 선택하세요</div></div>
+  </div>
+
+  <div>
+    <div class="lbl">현재 단계</div>
+    <div class="step-desc" id="stepDesc">단계를 선택하세요</div>
+  </div>
+
+  <hr>
+
+  <div>
+    <div class="lbl">평가 지표</div>
+    <div class="mc-g" id="mcGrid">
+      <div class="mc"><div class="mc-v">—</div><div class="mc-l">총 보드 수</div><div class="mc-d">온장+절단</div></div>
+      <div class="mc"><div class="mc-v c-green">—</div><div class="mc-l">온장 수</div><div class="mc-d">↑ 많을수록</div></div>
+      <div class="mc"><div class="mc-v c-amber">—</div><div class="mc-l">절단 수</div><div class="mc-d">↓ 적을수록</div></div>
+      <div class="mc"><div class="mc-v">—</div><div class="mc-l">로스율</div><div class="mc-d">↓ 적을수록</div></div>
+      <div class="mc"><div class="mc-v c-amber">—</div><div class="mc-l">노치절단</div><div class="mc-d">↓ 작업성↑</div></div>
+      <div class="mc"><div class="mc-v">—</div><div class="mc-l">발주 매수</div><div class="mc-d">할증 포함</div></div>
+      <div class="mc"><div class="mc-v">—</div><div class="mc-l">순 설치 면적</div><div class="mc-d">개구부 공제</div></div>
+    </div>
+    <div style="font-size:9px;color:var(--t3)">※ 수치 기준 없음. 방향만 제시.</div>
+  </div>
+
+  <hr>
+
+  <div>
+    <div class="lbl">보드 목록</div>
+    <div class="board-list" id="boardList"><div style="color:var(--t3);font-size:10px;padding:4px">실행 후 표시</div></div>
+  </div>
+
+
+  <hr>
+
+
+  <!-- ── 전체 요약 패널 ── -->
+  <div id="summaryPanel" style="margin-bottom:10px">
+    <div class="lbl" style="margin-bottom:8px">② 전체 요약</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px">
+      <div class="sum-card"><div class="sum-v" id="sum-walls" style="color:var(--text)">—</div><div class="sum-l">분석 벽 수</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-gross" style="color:#e67e22">—</div><div class="sum-l">총 벽 면적(㎡)</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-net" style="color:#e67e22">—</div><div class="sum-l">순 벽 면적(㎡)</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-tot" style="color:var(--blue)">—</div><div class="sum-l">총 보드 수(장)</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-full" style="color:#8e44ad">—</div><div class="sum-l">온장(절단없음)</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-cut" style="color:#c0392b">—</div><div class="sum-l">자른 보드</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-reuse" style="color:var(--green)">0</div><div class="sum-l">재사용(자투리)</div></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px">
+      <div class="sum-card sum-card-wide"><div class="sum-v" id="sum-order" style="color:var(--blue);font-size:12px">—</div><div class="sum-l">발주 단위(1팔레트=990장)</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-cuts" style="color:var(--blue)">—</div><div class="sum-l">총 절단 횟수</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-dir" style="color:var(--blue);font-size:11px">—</div><div class="sum-l">세로/가로/혼합</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-remnants" style="color:var(--blue)">—</div><div class="sum-l">잔여 조각(절단 후)</div></div>
+      <div class="sum-card"><div class="sum-v" id="sum-loss" style="color:#27ae60">—</div><div class="sum-l">전체 로스율</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="lbl">경량벽체 일람표 (별표1)</div>
+    <div id="scheduleBox" style="background:var(--s2);border:1px solid var(--bd);border-radius:5px;font-size:9px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:9px">
+        <thead>
+          <tr style="background:var(--s3);border-bottom:1px solid var(--bd)">
+            <th style="padding:4px 5px;text-align:left;color:var(--t2)">벽 이름</th>
+            <th style="padding:4px 5px;text-align:center;color:var(--t2)">층</th>
+            <th style="padding:4px 5px;text-align:right;color:var(--t2)">방향</th>
+            <th style="padding:4px 5px;text-align:right;color:var(--t2)">온장</th>
+            <th style="padding:4px 5px;text-align:right;color:var(--t2)">직선</th>
+            <th style="padding:4px 5px;text-align:right;color:var(--t2)">노치</th>
+            <th style="padding:4px 5px;text-align:right;color:var(--t2)">로스%</th>
+            <th style="padding:4px 5px;text-align:right;color:var(--t2)">발주</th>
+          </tr>
+        </thead>
+        <tbody id="scheduleBody">
+          <tr><td colspan="8" style="padding:6px;color:var(--t3);text-align:center">시뮬레이션 실행 후 표시</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+var IFC = __IFC_WALLS__;
+
+// ━━━ 상태 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var G = {
+  method:'wood', ply:1, zoom:1, mat:'gyp',
+  step:-1, wall:null, cells:[], result:null,
+  bStep:-1, bAnim:false, bTimer:null, speed:350,
+  storey:'', showOp:'',
+  gridStep:-1,         // 그리드 선 하나씩 표시 (-1=전체)
+  defaultResult:null,  // 기본 시뮬 결과 저장
+  optimalResult:null,  // 최적 탐색 결과 저장
+  notchPhase:0,        // 노치 애니 단계 (0=없음,1=원판,2=절단선,3=완성)
+  notchTimer:null      // 노치 단계 타이머
+};
+var MIN=300, STUD=450;
+var STUD = 450; // 각재 간격
+var FLOOR_GAP = 5; // 바닥 이격
+var CORNER_MIN = 200; // 개구부 코너 이격
+var CMAX=520, CHMAX=300;
+
+// ━━━ 층 바 초기화 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var STOREY_ORDER = __STOREY_ORDER__;
+// GL/RF 기본 제외: GL=기초 레벨 요소(석고보드 시공 대상 아님), RF=파라펫(높이 561mm)
+var EXCLUDED_STOREYS = {GL:true, RF:true};
+var storeyCount = {};
+IFC.forEach(function(w){ storeyCount[w.storey]=(storeyCount[w.storey]||0)+1; });
+var maxCnt = Math.max.apply(null, Object.values(storeyCount));
+
+(function initBars(){
+  var el = document.getElementById('storeyBars');
+  // GL/RF 제외 토글 버튼 추가
+  var excDiv = document.createElement('div');
+  excDiv.style.cssText='font-size:9px;color:var(--t3);margin-bottom:4px;line-height:1.5';
+  excDiv.innerHTML='<span style="color:#F04848">●</span> GL·RF 제외 (기초·파라펫) '
+    +'<button id="btnExclude" onclick="toggleExclude()" style="font-size:8px;padding:1px 6px;border:1px solid #2A3F5A;background:#1C2A3E;color:#5A7A9A;border-radius:3px;cursor:pointer">제외 중</button>';
+  el.appendChild(excDiv);
+
+  STOREY_ORDER.forEach(function(s){
+    var cnt = storeyCount[s] || 0;
+    if(!cnt) return;
+    var div = document.createElement('div');
+    div.className = 'sb';
+    div.id = 'sr-'+s;
+    var isExcl = EXCLUDED_STOREYS[s];
+    div.style.opacity = isExcl ? '0.35' : '1';
+    div.innerHTML = '<span class="sb-name">'+s+(isExcl?' <small style="color:#F04848">제외</small>':'')+'</span>'
+      +'<div class="sb-bar"><div class="sb-fill" style="width:'+Math.round(cnt/maxCnt*100)+'%"></div></div>'
+      +'<span class="sb-cnt">'+cnt+'</span>';
+    div.addEventListener('click', (function(ss){ return function(){
+      if(EXCLUDED_STOREYS[ss]) return; // 제외된 층은 선택 불가
+      G.storey = G.storey===ss ? '' : ss;
+      document.querySelectorAll('.sb').forEach(function(b){ b.classList.remove('on'); });
+      if(G.storey) document.getElementById('sr-'+G.storey).classList.add('on');
+      filterWalls();
+    };})(s));
+    el.appendChild(div);
+  });
+})();
+
+function toggleExclude(){
+  var isNowExcluding = EXCLUDED_STOREYS.GL;
+  EXCLUDED_STOREYS = isNowExcluding ? {} : {GL:true, RF:true};
+  document.getElementById('btnExclude').textContent = isNowExcluding ? '모두 포함' : '제외 중';
+  document.getElementById('btnExclude').style.color = isNowExcluding ? '#26BE78' : '#5A7A9A';
+  // 층 바 업데이트
+  STOREY_ORDER.forEach(function(s){
+    var bar = document.getElementById('sr-'+s);
+    if(!bar) return;
+    var isExcl = EXCLUDED_STOREYS[s];
+    bar.style.opacity = isExcl ? '0.35' : '1';
+    bar.querySelector('.sb-name').innerHTML = s+(isExcl?' <small style="color:#F04848">제외</small>':'');
+  });
+  if(G.storey && EXCLUDED_STOREYS[G.storey]){
+    G.storey = '';
+    document.querySelectorAll('.sb').forEach(function(b){ b.classList.remove('on'); });
+  }
+  filterWalls();
+  var totEl = document.querySelector('.top-meta');
+  if(totEl){
+    var cnt = IFC.filter(function(w){ return !EXCLUDED_STOREYS[w.storey]; }).length;
+    totEl.textContent = '광건기숙사 · '+cnt+'개 벽 · IFC 연동';
+  }
+}
+
+// ━━━ 벽 목록 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function filterWalls(){
+  var nm = (document.getElementById('srch').value||'').toLowerCase();
+  var op = document.getElementById('fOp').value;
+  var list = IFC.filter(function(w){
+    if(EXCLUDED_STOREYS[w.storey]) return false; // GL/RF 제외
+    if(G.storey && w.storey!==G.storey) return false;
+    if(nm && !w.name.toLowerCase().includes(nm) && !(w.space||'').includes(nm)) return false;
+    if(op==='y' && !w.openings.length) return false;
+    if(op==='n' && w.openings.length) return false;
+    return true;
+  });
+  document.getElementById('wCnt').textContent = list.length+'개';
+  var el = document.getElementById('wallList');
+  el.innerHTML = '';
+  list.slice(0,120).forEach(function(w){
+    var div = document.createElement('div');
+    div.className = 'wi' + (G.wall&&G.wall.wall_id===w.wall_id?' on':'');
+    var hasOp = w.openings.length>0;
+    div.innerHTML = '<div class="wi-name">'+w.name+(hasOp?'<span class="wi-op">●</span>':'')+'</div>'
+      +'<div class="wi-dim">'+w.storey+(w.space?' | '+w.space:'')+'</div>'
+      +'<div class="wi-dim">'+w.length.toLocaleString()+'×'+w.height.toLocaleString()+'mm'+(hasOp?' | 개구부'+w.openings.length:'')+'</div>';
+    div.addEventListener('click', (function(wall){ return function(){ selectWall(wall); }; })(w));
+    el.appendChild(div);
+  });
+}
+
+function selectWall(w){
+  G.wall = w; G.step = -1; G.bStep = -1;
+  filterWalls();
+  // 벽 정보 표시
+  var html = '<div class="wi-row"><span class="wi-key">이름</span><span class="wi-val">'+w.name+'</span></div>'
+    +'<div class="wi-row"><span class="wi-key">층</span><span class="wi-val">'+w.storey+'</span></div>'
+    +'<div class="wi-row"><span class="wi-key">공간</span><span class="wi-val">'+(w.space||'—')+'</span></div>'
+    +'<div class="wi-row"><span class="wi-key">가로</span><span class="wi-val">'+w.length.toLocaleString()+'mm</span></div>'
+    +'<div class="wi-row"><span class="wi-key">높이</span><span class="wi-val">'+w.height.toLocaleString()+'mm</span></div>'
+    +'<div class="wi-row"><span class="wi-key">개구부</span><span class="wi-val">'+(w.openings.length?w.openings.length+'개':'없음')+'</span></div>';
+  w.openings.forEach(function(o){
+    html += '<div class="op-tag">'+(o.type==='door'?'🚪':'🪟')+' '+o.width+'×'+o.height+'mm @x='+o.x+'mm</div>';
+  });
+  document.getElementById('wallInfo').innerHTML = html;
+  // 단계 잠금 해제
+  for(var i=0;i<=5;i++){ var el=document.getElementById('s'+i); if(el) el.classList.remove('locked','active','done'); }
+}
+
+// ━━━ UI 컨트롤 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setMat(m){
+  G.mat=m;
+  document.getElementById('mat-gyp').classList.toggle('on',m==='gyp');
+  document.getElementById('mat-ply').classList.toggle('on',m==='ply');
+  // 자재별 보드 규격: 석고보드=900×1800, 합판=1220×2440
+  var info=m==='gyp'?'석고보드 900×1800mm · 파레트 990매':'합판 1220×2440mm · 파레트 기준 확인 필요';
+  document.getElementById('plyNote').textContent=info;
+}
+
+function setM(m){
+  G.method=m;
+  ['float','wood','stud'].forEach(function(x){ document.getElementById('m-'+x).classList.toggle('on',x===m); });
+  document.getElementById('gridLeg').style.display = m!=='float' ? '' : 'none';
+}
+function setPly(p){
+  G.ply=p;
+  document.getElementById('ply1').classList.toggle('on',p===1);
+  document.getElementById('ply2').classList.toggle('on',p===2);
+  var el=document.getElementById('plyNote');
+  el.textContent = p===1 ? '1P: 기준점에서 바로 시작' : '2P: 1P는 450mm 오프셋 → 이음새 엇갈림';
+  el.className = 'note '+(p===1?'note-blue':'note-amber');
+}
+function zI(){ G.zoom=Math.min(G.zoom*1.3,5); drawAll(); }
+function zO(){ G.zoom=Math.max(G.zoom/1.3,0.2); drawAll(); }
+function zR(){ G.zoom=1; drawAll(); }
+
+// ━━━ 알고리즘 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function uniq(a){ return a.filter(function(v,i,ar){ return ar.indexOf(v)===i; }); }
+
+function calcXBreaks(W, ops, bw, off){
+  /*
+    [개선] 온장 우선 배치용 X방향 그리드 생성
+    - 기존 방식은 개구부 좌우 경계선을 벽 전체 높이에 세로 분할선으로 넣어서,
+      개구부와 직접 관계없는 일반 구간까지 직선절단으로 잘리는 문제가 있었음.
+    - 개선 방식은 기본 보드 폭 그리드를 먼저 유지함.
+    - 개구부는 placeGrid → cellSolid/classify 단계에서
+      실제로 보드 1장과 겹치는 경우에만 notch로 판단함.
+    - 개구부 중심선 제거: 중심선이 오히려 좁은 칸(작은 조각)을 생성해
+      절단을 늘리는 문제 발생 → 순수 보드폭 그리드만 사용.
+  */
+  off = off||0;
+  var b=[0,W];
+  var start=off;
+  if(start>0 && start<W) b.push(start);
+  var x=start;
+  while(x<W){
+    if(x>0) b.push(x);
+    x+=bw;
+  }
+  // 순수 bw 간격 그리드 사용 — 개구부 경계 추가 없음
+  // 이유: oLeft/oRight 추가시 550/350/945/1035mm 등 비표준 크기 보드 발생
+  // 노치 판별은 classify()에서 셀-개구부 overlap으로 처리
+  return uniq(b).filter(function(v){ return v>=0&&v<=W; }).sort(function(a,c){ return a-c; });
+}
+
+function fixFirstThin(brk, minW){
+  // 첫 칸 슬리버 방지: 오프셋 시작 시 첫 칸이 minW 미만이면 두 번째 칸으로 병합
+  if(brk.length<3) return brk;
+  var r=brk.slice();
+  var firstW = r[1]-r[0];
+  if(firstW>0 && firstW<minW){
+    // 첫 칸 제거: 두 번째 그리드 점을 첫 칸과 합침
+    // 즉 r[1]을 r[0]로 이동 (첫 보드가 더 넓어짐)
+    r.splice(1,1);
+  }
+  return r;
+}
+
+function fixLastThin(brk){
+  // 마지막 칸만 처리: 300mm 미만이면 앞 칸 하나만 줄여서 300mm 확보
+  // 중간 보드는 절대 건드리지 않음 (모두 bw 정규격)
+  if(brk.length<3) return brk;
+  var r=brk.slice();
+  var lastW=r[r.length-1]-r[r.length-2];
+  if(lastW>0 && lastW<MIN){
+    var newSplit=r[r.length-1]-MIN;
+    var prev2=r.length>=3?r[r.length-3]:0;
+    if(newSplit>prev2) r[r.length-2]=newSplit;
+  }
+  return r;
+}
+
+function cellSolid(x1,y1,x2,y2,ops){
+  var a=(x2-x1)*(y2-y1);
+  (ops||[]).forEach(function(o){
+    // IFC 개구부 x = 중심점 → 왼쪽끝 보정
+    var oLeft = o.x - Math.round(o.width/2);
+    var ox2=oLeft+o.width, oy2=o.y+o.height;
+    var ix1=Math.max(x1,oLeft), iy1=Math.max(y1,o.y);
+    var ix2=Math.min(x2,ox2), iy2=Math.min(y2,oy2);
+    if(ix2>ix1&&iy2>iy1) a-=(ix2-ix1)*(iy2-iy1);
+  });
+  return Math.max(0,a);
+}
+
+function classify(pos,solid,cw,ch,bw,bh,bx1,by1,bx2,by2,ops,row,totalRows){
+  if(solid<=0) return 'skip';
+  var CMIN = (typeof CORNER_MIN!=='undefined') ? CORNER_MIN : 200; // 개구부 코너 이격
+  var isNotch=false, hasOverlap=false;
+  var cornerWarn=false; // 개구부 코너에 이음매가 걸리는 경우
+  (ops||[]).forEach(function(o){
+    var oLeft=o.x-Math.round(o.width/2);
+    var oRight=oLeft+o.width, oTop=o.y, oBot=o.y+o.height;
+    var ix1=Math.max(bx1,oLeft), iy1=Math.max(by1,oTop);
+    var ix2=Math.min(bx2,oRight), iy2=Math.min(by2,oBot);
+    if(ix2<=ix1||iy2<=iy1) return;
+    hasOverlap=true;
+    // 노치: 개구부가 보드 좌우 내부를 가로지르거나 상하 내부를 가로지름
+    var throughX=(oLeft>bx1+2 && oRight<bx2-2);
+    var throughY=(oTop>by1+2 && oBot<by2-2);
+    if(throughX||throughY) isNotch=true;
+    // 개구부 코너 이격 체크: 이음매(보드 끝)가 코너에서 CMIN mm 이내면 경고
+    // 이음매 위치 = bx1(왼쪽 끝) 또는 bx2(오른쪽 끝)
+    var seamLeft=bx1, seamRight=bx2;
+    if(Math.abs(seamLeft-oLeft)<CMIN || Math.abs(seamLeft-oRight)<CMIN ||
+       Math.abs(seamRight-oLeft)<CMIN || Math.abs(seamRight-oRight)<CMIN){
+      cornerWarn=true;
+    }
+  });
+  // 타입 결정
+  var t;
+  if(isNotch) t='notch';
+  else if(hasOverlap) t='edge_cut';
+  else if(Math.round(cw)===bw&&Math.round(ch)===bh) t='full';
+  else t='edge_cut';
+  // cornerWarn을 셀 플래그로 반환할 수 없으므로 전역 카운터 활용 (run()에서 초기화)
+  if(cornerWarn && typeof window!=='undefined' && window._cornerWarnCount!=null){
+    window._cornerWarnCount++;
+  }
+  return t;
+}
+
+function placeGrid(W,H,ops,bw,bh,off){
+  var cells=[], idx=0;
+  var floorGap = (typeof FLOOR_GAP!=='undefined') ? FLOOR_GAP : 5; // 바닥 이격 mm
+  var Heff = H - floorGap; // 유효 높이 (바닥 이격 제외)
+
+  // X축 그리드: fixLastThin으로 마지막 칸 슬리버 방지
+  var xB = fixLastThin(calcXBreaks(W,ops,bw,off||0));
+  // X축 첫 칸 슬리버 방지 (시작 오프셋이 있을 때 첫 칸이 좁을 수 있음)
+  xB = fixFirstThin(xB, MIN);
+
+  // Y축 행 계산 (바닥 이격 적용)
+  var rows = Math.ceil(Heff/bh);
+
+  for(var ri=0;ri<rows;ri++){
+    var by1=ri*bh, by2=Math.min(by1+bh, Heff);
+    if(by2<=by1) continue;
+    // 이음매 교차: 짝수 행과 홀수 행의 X 그리드를 bw/2 엇갈리게 (2P가 아닌 1P에서도 행간 엇갈림 적용)
+    // 단, 2P에서는 이미 off로 처리되므로 1P에서만 적용
+    var rowXB = xB; // 기본: 엇갈림 없음 (M3 확인 후 활성화 가능)
+    // var rowXB = (ri%2===1) ? fixLastThin(calcXBreaks(W,ops,bw,(off||0)+Math.floor(bw/2))) : xB;
+    for(var xi=0;xi<rowXB.length-1;xi++){
+      var bx1=rowXB[xi], bx2=rowXB[xi+1];
+      if(bx2<=bx1) continue;
+      var cw=bx2-bx1, ch=by2-by1, pos=cw*ch;
+      if(cw<100) { idx++; continue; } // 극소 칸 스킵
+      var solid=cellSolid(bx1,by1,bx2,by2,ops);
+      var type=classify(pos,solid,cw,ch,bw,bh,bx1,by1,bx2,by2,ops,ri,rows);
+      if(type==='skip'){ idx++; continue; }
+      // 살아있는 면(live) vs 죽은 면(dead) 판별
+      // 죽은 면: Y축 마지막 행 하단(바닥방향), Y축 첫 행 상단(천장방향)
+      var deadTop = (ri===0);         // 천장 방향 — 죽은 면
+      var deadBot = (ri===rows-1);    // 바닥 방향 — 죽은 면
+      var deadLeft  = (xi===0 && (off||0)>0); // 오프셋 시작 조각
+      idx++;
+      cells.push({
+        x:bx1,y:by1,w:cw,h:ch,pos:pos,solid:solid,type:type,idx:idx,
+        row:ri,col:xi,totalRows:rows,
+        deadTop:deadTop, deadBot:deadBot, deadLeft:deadLeft,
+        isSliver: (cw<MIN||ch<MIN)
+      });
+    }
+  }
+  // 부착 순서: 위 행→아래 행, 같은 행에서 왼→오 (기본값)
+  cells.sort(function(a,b){ return a.y!==b.y ? a.y-b.y : a.x-b.x; });
+  var codeIdx=0;
+  cells.forEach(function(c){ if(c.type!=='skip') c.code='GYP-'+String(++codeIdx).padStart(3,'0'); });
+  return cells;
+}
+
+function score(cells){
+  // [개선] 동영 방식: 온장 수 최소 우선 → 절단 횟수 최소 (보드 수 최소보다 현장 효율적)
+  var active=cells.filter(function(c){return c.type!=='skip';});
+  var nF=active.filter(function(c){return c.type==='full';}).length;
+  var nCut=active.length-nF;
+  // 점수: 온장 적을수록 좋음(현장에서 온장=빠름), 단 총 보드수도 고려
+  return active.length * 1000 - nF;  // 총 수 최소 우선, 같으면 온장 많은 쪽
+}
+
+// ━━━ 최적 배치 탐색 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 지금 시스템: bW=900 or 1800, 시작점=개구부끝 or 왼쪽하단 (고정)
+// 최적 탐색: x 오프셋(0~bW, 50mm 간격) + bW(450/600/900/1200/1800) 조합 전수 탐색
+// → 총 보드 수가 가장 적은 조합 채택
+
+function tryConfig(W,H,ops,bw,bh,off){
+  // off = 그리드 시작 x 오프셋
+  var cells=placeGrid(W,H,ops,bw,bh,off);
+  var tot=score(cells);
+  var nF=cells.filter(function(c){return c.type==='full';}).length;
+  var nE=cells.filter(function(c){return c.type==='edge_cut';}).length;
+  var nN=cells.filter(function(c){return c.type==='notch';}).length;
+  var gu=tot*bw*bh;
+  var st=cells.reduce(function(s,c){return s+c.solid;},0);
+  var lr=gu>0?(gu-st)/gu:0;
+  // 비용: 보드 수 최소화 우선, 그 다음 로스율
+  var cost=tot*100+lr;
+  return {cost:cost,tot:tot,nF:nF,nE:nE,nN:nN,lr:lr,cells:cells,bw:bw,bh:bh,off:off};
+}
+
+
+
+
+// ━━━ 실행 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function run(){
+  if(!G.wall){ alert('벽을 선택하세요'); return; }
+  window._cornerWarnCount = 0; // 개구부 코너 이격 경고 카운터 초기화
+  var W=G.wall.length, H=G.wall.height;
+  var ops=G.wall.openings;
+  var mk=+document.getElementById('markup').value/100;
+  var os=document.getElementById('orient').value;
+  // ━━ 자재별 표준 규격 ━━
+  var BW, BH, PALLET;
+  if(G.mat==='ply'){ BW=1220; BH=2440; PALLET=990; }
+  else { BW=900; BH=1800; PALLET=990; }
+
+  // ━━ 공법/겹수별 오프셋 ━━
+  // 1P: 오프셋 없음 (0mm) → 보드가 벽 왼쪽 끝부터 시작
+  // 2P: 1겹은 bw/2 오프셋 → 첫 보드가 절반 크기로 시작 → 2겹과 이음새 엇갈림
+  var off = G.ply===2 ? Math.min(STUD, Math.floor(BW/2)) : 0;
+
+  // [개선] 2P 레이어 분리: L1(오프셋없음) + L2(오프셋) 따로 계산
+  if(G.ply===2){
+    G._L1=placeGrid(W,H,ops,BW,BH,0);
+    G._L2=placeGrid(W,H,ops,BW,BH,off);
+  } else { G._L1=null; G._L2=null; }
+
+  var cV=placeGrid(W,H,ops,BW,BH,off);
+  var cH=placeGrid(W,H,ops,BH,BW,off);
+  var sV=score(cV), sH=score(cH);
+
+  var bw,bh,orient,cells;
+  if(os==='auto'){ if(sV<=sH){bw=BW;bh=BH;orient='세로';cells=cV;}else{bw=BH;bh=BW;orient='가로';cells=cH;} }
+  else if(os==='v'){ bw=BW;bh=BH;orient='세로';cells=cV; }
+  else { bw=BH;bh=BW;orient='가로';cells=cH; }
+
+  G.cells=cells;
+
+  var nF=cells.filter(function(c){ return c.type==='full'; }).length;
+  var nE=cells.filter(function(c){ return c.type==='edge_cut'; }).length;
+  var nN=cells.filter(function(c){ return c.type==='notch'; }).length;
+  var tot=nF+nE+nN;
+  var gu=tot*bw*bh;
+  var st=cells.reduce(function(s,c){ return s+c.solid; },0);
+  var lr=gu>0?(gu-st)/gu:0;
+  var oa=ops.reduce(function(s,o){ return s+o.width*o.height; },0);
+  var net=(W*H-oa)/1e6;
+  var gs=Math.ceil(tot*(1+mk));
+  var palettes=Math.ceil(gs/PALLET);
+
+  G.result={W:W,H:H,bw:bw,bh:bh,orient:orient,ops:ops,
+    nF:nF,nE:nE,nN:nN,tot:tot,cutCount:nE+nN,lr:lr,notchRatio:tot>0?nN/tot:0,net:net,gs:gs,mk:mk};
+
+  // 카운트 표시
+  document.getElementById('sc2').textContent=nF+'장';
+  document.getElementById('sc3').textContent=nE+'장';
+  document.getElementById('sc4').textContent=nN+'장';
+
+  // 단계 잠금 해제
+  for(var i=0;i<=4;i++){ document.getElementById('s'+i).classList.remove('locked'); }
+
+  // 기본 시뮬 결과 저장
+  G.defaultResult={
+    cells:cells.slice(), result:Object.assign({},G.result)
+  };
+  G.optimalResult=null;
+
+  G.step=0; G.bStep=-1;
+  document.getElementById('cvEmpty').style.display='none';
+  document.getElementById('animCtrl').style.display='';
+  drawAll(); upMetrics(); upBoards(); hiStep(0); upSchedule(); upWallBadge();
+  document.getElementById('stepLbl').textContent='';
+
+  // 실행 즉시 자동 재생
+  setTimeout(function(){ aPlay(); }, 300);
+}
+
+// ━━━ 단계 이동 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var STEP_DESCS = [
+  '① 입력: 벽의 크기(가로·높이)와 개구부(문·창문) 위치를 확인합니다. 보드가 아직 없는 상태.',
+  '② 그리드: 보드를 어디서 나눌지 선을 긋는 단계입니다.\n🟢초록점선 = 보드 이음새 위치 (각재/스터드 공법에서는 각재가 여기에 세워짐, 450mm마다)\n🟠주황점선 = 개구부(문·창문) 좌우 경계선\n🟣보라점선 = 개구부 중심선 (이음새가 여기서 대칭으로 만나 모서리 균열 방지)',
+  '③ 온장: 자르지 않고 보드 1장이 그대로 들어가는 자리 (석고보드 900×1800mm, 합판 1220×2440mm). 🟢초록색.',
+  '④ 직선절단: 보드를 직선 1번만 잘라서 붙이는 자리.\n• 가장자리 자리 (보드 규격보다 좁거나 낮음)\n• 개구부가 보드 좌우 전체를 관통하는 경우\n• 개구부가 보드 위아래 전체를 관통하는 경우\n→ 이 세 경우 모두 직선 1번으로 해결됨. 🟡노란색.',
+  '⑤ 노치절단: 개구부 모서리에 걸치는 보드. ㄱ자/ㄴ자로 두 번 잘라서 1장으로 붙임.\n이음새는 개구부 중심에 대칭 배치 (모서리 균열 방지). 🟣보라색.'
+];
+var STEP_LBLS = ['①입력','②그리드','③온장','④직선절단','⑤노치절단'];
+
+function goStep(s){
+  if(!G.result) return;
+  aPause();
+  G.step=s; G.bStep=-1; G.gridStep=-1;
+  drawAll(); hiStep(s);
+  document.getElementById('stepDesc').textContent=STEP_DESCS[s]||'';
+  document.getElementById('stepLbl').textContent=STEP_LBLS[s]||'';
+}
+
+function hiStep(s){
+  for(var i=0;i<=5;i++){
+    var el=document.getElementById('s'+i);
+    if(!el) continue;
+    el.classList.remove('active','done');
+    if(i===s) el.classList.add('active');
+    if(i<s) el.classList.add('done');
+  }
+}
+
+// ━━━ 캔버스 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function drawAll(){
+  if(!G.result) return;
+  var r=G.result;
+  if(G.ply===2){
+    document.getElementById('lbl1').textContent='1P (오프셋 450mm)';
+    document.getElementById('wrap1').style.display='';
+    document.getElementById('wrap2').style.display='';
+    var cm=Math.floor(CMAX*0.47);
+    var off1=Math.min(STUD,Math.floor(r.bw/2));
+    drawCV('cv1',r,G.cells,cm,CHMAX,off1);   // 1P: 오프셋 레이어 (450mm)
+    var c2=placeGrid(r.W,r.H,r.ops,r.bw,r.bh,0);
+    drawCV('cv2',r,c2,cm,CHMAX,0);            // 2P: 기준 레이어 (offset=0)
+  } else {
+    document.getElementById('lbl1').textContent='';
+    document.getElementById('wrap1').style.display='';
+    document.getElementById('wrap2').style.display='none';
+    drawCV('cv1',r,G.cells,CMAX,CHMAX,0);
+  }
+  upBoardList();
+}
+
+function drawCV(cvId, r, cells, cMax, cMaxH, gridOff){
+  var cv=document.getElementById(cvId);
+  var sc=Math.min(cMax/r.W, cMaxH/r.H, 0.45)*G.zoom;
+  var PL=34, PB=22;
+  cv.width=Math.round(r.W*sc)+PL+2;
+  cv.height=Math.round(r.H*sc)+PB+2;
+  var ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,cv.width,cv.height);
+  var OX=PL, OY=1;
+  var W=r.W, H=r.H;
+
+  // 배경
+  ctx.fillStyle='#0D111A';
+  ctx.fillRect(OX,OY,Math.round(W*sc),Math.round(H*sc));
+
+  var s=G.step;
+
+  // 개구부 좌우 경계선 목록: STEP 0과 STEP 1에서 모두 사용
+  // 기존 오류 원인: STEP 0에서 opEdges.length를 먼저 읽고, STEP 1 내부에서 opEdges를 나중에 선언했기 때문
+  var opEdges=[];
+  if(G.method!=='float'&&r.ops&&r.ops.length){
+    r.ops.forEach(function(o){
+      var oLeft=o.x-Math.round(o.width/2);
+      var L=Math.max(0,Math.min(oLeft,W));
+      var R=Math.max(0,Math.min(oLeft+o.width,W));
+      if(L>0) opEdges.push(L);
+      if(R<W) opEdges.push(R);
+    });
+  }
+
+  // STEP 0: 윤곽선만
+  if(s===0){
+    ctx.strokeStyle='rgba(58,142,255,.5)';ctx.lineWidth=1.5;
+    ctx.strokeRect(OX+1,OY+1,Math.round(W*sc)-2,Math.round(H*sc)-2);
+    // 개구부 가장자리 = 추가 각재 필요 표시 (주황)
+    if(G.method!=='float'&&opEdges.length){
+      ctx.strokeStyle='rgba(236,186,48,.7)';ctx.lineWidth=1.5;ctx.setLineDash([]);
+      opEdges.forEach(function(x){
+        var lx=OX+x*sc;
+        ctx.beginPath();ctx.moveTo(lx,OY);ctx.lineTo(lx,OY+H*sc);ctx.stroke();
+        ctx.fillStyle='rgba(236,186,48,.8)';ctx.font='8px DM Mono,monospace';
+        ctx.textAlign='center';ctx.textBaseline='top';
+        ctx.fillText('각재추가',lx,OY+2);
+      });
+    }
+    drawOps(ctx,r,sc,OX,OY);
+    drawDims(ctx,r,sc,OX,OY,PL,PB,cv.width,cv.height);
+    return;
+  }
+
+  // STEP 1: 그리드선 하나씩 (gridStep 기반)
+  if(s===1){
+    ctx.strokeStyle='rgba(58,142,255,.15)';ctx.lineWidth=1;
+    ctx.strokeRect(OX,OY,Math.round(W*sc),Math.round(H*sc));
+
+    // 그리드 선 목록 구성 (세로선 + 가로선)
+    // gridOff: cv1=오프셋 레이어(2P시 450mm), cv2=기준 레이어(0mm)
+    var gridLines=[];
+    if(G.method!=='float'){
+      // 각재/스터드: 450mm 간격 그리드 (각재 위치) + 900mm 보드 이음새 구분
+      var studLines=[]; // 450mm마다 (각재 위치)
+      var boardLines=[]; // 900mm마다 (보드 이음새)
+      var xB=calcXBreaks(W,r.ops,r.bw,gridOff||0);
+      var off2=gridOff||0;
+      // 450mm 모든 간격
+      for(var sx2=off2;sx2<=W;sx2+=STUD){
+        if(sx2>0&&sx2<W) studLines.push(sx2);
+      }
+      // 보드 이음새는 calcXBreaks 결과 (900mm 배수)
+      xB.forEach(function(x){ if(x>0&&x<W) boardLines.push(x); });
+      // 표시: 450mm선 먼저, 그 다음 900mm 이음새 강조
+      studLines.forEach(function(x){
+        var isBoard=boardLines.indexOf(x)>=0;
+        gridLines.push({type:'v',pos:x,isBoard:isBoard});
+      });
+    }
+    // 가로 행 구분선
+    var rows=Math.ceil(H/r.bh);
+    for(var ri=1;ri<rows;ri++) gridLines.push({type:'h',pos:ri*r.bh});
+
+    // 개구부 가장자리 = 추가 각재 필요 위치는 위에서 opEdges로 미리 계산함
+    // gridStep에 따라 표시할 선 수 결정
+    var showCount=G.gridStep<0?gridLines.length:Math.min(G.gridStep,gridLines.length);
+
+    for(var gi=0;gi<showCount;gi++){
+      var gl=gridLines[gi];
+      var isLast=gi===showCount-1&&G.gridStep>=0;
+      if(gl.type==='v'){
+        // 각재/스터드: isBoard=true면 보드 이음새(진한 초록), false면 각재선(연한 초록)
+        var isBoard2=gl.isBoard!==false; // 떠붙임이면 기본 true
+        if(G.method!=='float') isBoard2=gl.isBoard;
+        var lineColor=isBoard2?
+          (isLast?'rgba(38,190,120,1.0)':'rgba(38,190,120,.65)'):
+          (isLast?'rgba(38,190,120,.7)':'rgba(38,190,120,.28)');
+        ctx.strokeStyle=lineColor;
+        ctx.lineWidth=isLast?2.0:(isBoard2?1.0:0.6);
+        ctx.setLineDash(isBoard2?[4,3]:[2,4]);
+        var lx=OX+gl.pos*sc;
+        ctx.beginPath();ctx.moveTo(lx,OY);ctx.lineTo(lx,OY+H*sc);ctx.stroke();
+        if(isLast&&gl.pos>0&&gl.pos<W){
+          ctx.fillStyle='rgba(38,190,120,.8)';ctx.font='9px DM Mono,monospace';
+          ctx.textAlign='center';ctx.textBaseline='top';
+          ctx.fillText(gl.pos.toLocaleString()+'mm',lx,OY+2);
+        }
+      } else {
+        ctx.strokeStyle=isLast?'rgba(58,142,255,1.0)':'rgba(58,142,255,.50)';
+        ctx.lineWidth=isLast?2.0:1.0; ctx.setLineDash([4,3]);
+        var ly=OY+(H-gl.pos)*sc;
+        ctx.beginPath();ctx.moveTo(OX,ly);ctx.lineTo(OX+W*sc,ly);ctx.stroke();
+        if(isLast){
+          ctx.fillStyle='rgba(58,142,255,.8)';ctx.font='9px DM Mono,monospace';
+          ctx.textAlign='left';ctx.textBaseline='middle';
+          ctx.fillText(gl.pos.toLocaleString()+'mm',OX+W*sc+3,ly);
+        }
+      }
+      ctx.setLineDash([]);
+    }
+
+    // 그리드 진행 표시
+    if(G.gridStep>=0){
+      document.getElementById('animInd').textContent='그리드 '+Math.min(G.gridStep,gridLines.length)+'/'+gridLines.length;
+      document.getElementById('animProg').style.width=(gridLines.length?Math.min(G.gridStep,gridLines.length)/gridLines.length*100:0)+'%';
+    }
+
+    // 개구부 기준선 (항상)
+    if(r.ops&&r.ops.length){
+      ctx.strokeStyle='rgba(236,186,48,.4)';ctx.lineWidth=.8;ctx.setLineDash([3,2]);
+      r.ops.forEach(function(o){
+        var oLeft=o.x-Math.round(o.width/2);var lx=OX+oLeft*sc, rx=OX+(oLeft+o.width)*sc;
+        ctx.beginPath();ctx.moveTo(lx,OY);ctx.lineTo(lx,OY+H*sc);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(rx,OY);ctx.lineTo(rx,OY+H*sc);ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      ctx.fillStyle='rgba(236,186,48,.7)';ctx.font='8px sans-serif';ctx.textAlign='center';
+      r.ops.forEach(function(o){
+        var oLeft=o.x-Math.round(o.width/2); var lx=OX+(oLeft+o.width/2)*sc;ctx.fillText('개구부 보강/노치 기준',lx,OY+H*sc+14);
+      });
+    }
+    drawOps(ctx,r,sc,OX,OY);
+    drawDims(ctx,r,sc,OX,OY,PL,PB,cv.width,cv.height);
+    return;
+  }
+
+  // STEP 2~5: 보드 렌더링
+  if(G.method!=='float'){
+    var xB2=calcXBreaks(W,r.ops,r.bw,gridOff||0);
+    ctx.strokeStyle='rgba(38,190,120,.30)';ctx.lineWidth=0.8;ctx.setLineDash([4,3]);
+    xB2.forEach(function(x){
+      var lx=OX+x*sc;ctx.beginPath();ctx.moveTo(lx,OY);ctx.lineTo(lx,OY+H*sc);ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+  if(r.ops&&r.ops.length){
+    ctx.strokeStyle='rgba(236,186,48,.3)';ctx.lineWidth=.7;ctx.setLineDash([2,3]);
+    r.ops.forEach(function(o){
+      var oLeft=o.x-Math.round(o.width/2); var lx=OX+oLeft*sc,rx=OX+(oLeft+o.width)*sc;
+      ctx.beginPath();ctx.moveTo(lx,OY);ctx.lineTo(lx,OY+H*sc);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rx,OY);ctx.lineTo(rx,OY+H*sc);ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+
+  var active=cells.filter(function(c){ return c.type!=='skip'; });
+  var limit=G.bStep>=0?G.bStep:active.length;
+  var bCount=0;
+
+  cells.forEach(function(c){
+    if(c.type==='skip') return;
+    bCount++;
+    var inStep=false;
+    if(G.bStep>=0){
+      inStep=bCount<=limit;
+    } else {
+      if(s===2) inStep=c.type==='full';
+      else if(s===3) inStep=c.type==='full'||c.type==='edge_cut'||c.type==='reuse';
+      else if(s===4) inStep=true;
+      }
+
+    var cx=OX+c.x*sc, cy=OY+(H-c.y-c.h)*sc;
+    var cw=Math.max(1,c.w*sc), ch=Math.max(1,c.h*sc);
+
+    if(!inStep){
+      ctx.fillStyle='rgba(255,255,255,.015)';ctx.fillRect(cx,cy,cw,ch);
+      ctx.strokeStyle='#1C2A3E';ctx.lineWidth=.3;ctx.strokeRect(cx,cy,cw,ch);
+      return;
+    }
+
+    var fill,stroke;
+    if(c.type==='full'){fill='#163A28';stroke='#26BE78';}
+    else if(c.type==='edge_cut'){fill='#3A2800';stroke='#ECBA30';}
+    else if(c.type==='reuse'){fill='#0A2040';stroke='#3A8EFF';}
+    else{fill='#1E1050';stroke='#7A6EE8';}
+
+    // 현재 보드 강조 여부
+    var isLast=G.bStep>=0&&bCount===limit&&inStep;
+
+    // ── 노치 보드 애니 3단계 처리 ──────────────────────────
+    if(isLast && c.type==='notch' && G.notchPhase>0){
+      if(G.notchPhase===1){
+        // 단계1: 원판 전체 (자르기 전)
+        ctx.fillStyle='rgba(58,30,80,.55)'; ctx.fillRect(cx,cy,cw,ch);
+        ctx.strokeStyle='#7A6EE8'; ctx.lineWidth=1.5; ctx.strokeRect(cx,cy,cw,ch);
+        ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=2; ctx.strokeRect(cx+1,cy+1,cw-2,ch-2);
+      } else if(G.notchPhase===2){
+        // 단계2: 원판 + 절단선(✂) 표시
+        ctx.fillStyle='rgba(58,30,80,.55)'; ctx.fillRect(cx,cy,cw,ch);
+        ctx.strokeStyle='#7A6EE8'; ctx.lineWidth=1.5; ctx.strokeRect(cx,cy,cw,ch);
+        // 개구부 겹침 영역에 절단선 표시
+        (r.ops||[]).forEach(function(o){
+          var oLeft2=o.x-Math.round(o.width/2);
+          var ox=OX+oLeft2*sc, oy=OY+(H-o.y-o.height)*sc;
+          var ow=o.width*sc, oh=o.height*sc;
+          var ix1=Math.max(cx,ox), iy1=Math.max(cy,oy);
+          var ix2=Math.min(cx+cw,ox+ow), iy2=Math.min(cy+ch,oy+oh);
+          if(ix2>ix1&&iy2>iy1){
+            // 절단 영역 붉은 오버레이
+            ctx.fillStyle='rgba(240,72,72,.35)'; ctx.fillRect(ix1,iy1,ix2-ix1,iy2-iy1);
+            // 절단선 (빨간 점선)
+            ctx.strokeStyle='rgba(255,100,100,.95)'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+            if(ix1>cx+1){ ctx.beginPath(); ctx.moveTo(ix1,cy); ctx.lineTo(ix1,cy+ch); ctx.stroke(); }
+            if(ix2<cx+cw-1){ ctx.beginPath(); ctx.moveTo(ix2,cy); ctx.lineTo(ix2,cy+ch); ctx.stroke(); }
+            if(iy1>cy+1){ ctx.beginPath(); ctx.moveTo(cx,iy1); ctx.lineTo(cx+cw,iy1); ctx.stroke(); }
+            if(iy2<cy+ch-1){ ctx.beginPath(); ctx.moveTo(cx,iy2); ctx.lineTo(cx+cw,iy2); ctx.stroke(); }
+            ctx.setLineDash([]);
+            // ✂ 아이콘
+            var fontSize=Math.max(10,Math.min(16,(ix2-ix1)*0.45,(iy2-iy1)*0.6));
+            ctx.fillStyle='rgba(255,120,120,.95)';
+            ctx.font='bold '+fontSize+'px sans-serif';
+            ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText('✂',(ix1+ix2)/2,(iy1+iy2)/2);
+          }
+        });
+        ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=2; ctx.strokeRect(cx+1,cy+1,cw-2,ch-2);
+      } else {
+        // 단계3: 완성형 (노치 클리핑)
+        ctx.save();
+        ctx.beginPath(); ctx.rect(cx,cy,cw,ch);
+        (r.ops||[]).forEach(function(o){
+          var oLeft2=o.x-Math.round(o.width/2); var ox=OX+oLeft2*sc, oy=OY+(H-o.y-o.height)*sc;
+          var ow=o.width*sc, oh=o.height*sc;
+          var ix1=Math.max(cx,ox),iy1=Math.max(cy,oy);
+          var ix2=Math.min(cx+cw,ox+ow),iy2=Math.min(cy+ch,oy+oh);
+          if(ix2>ix1&&iy2>iy1) ctx.rect(ix1,iy1,ix2-ix1,iy2-iy1);
+        });
+        ctx.clip('evenodd');
+        ctx.fillStyle='#1E1050'; ctx.fill();
+        ctx.strokeStyle='#7A6EE8'; ctx.lineWidth=.7; ctx.stroke();
+        ctx.restore();
+        ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=2; ctx.strokeRect(cx+1,cy+1,cw-2,ch-2);
+      }
+      // 보드 번호 (phase 1/3에서만)
+      if(G.notchPhase!==2 && cw>18&&ch>11){
+        ctx.fillStyle='rgba(255,255,255,.95)';
+        ctx.font='bold '+Math.max(7,Math.min(9,cw/6))+'px DM Mono,monospace';
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(c.code, cx+cw*.28, cy+ch*.28);
+      }
+      return;
+    }
+    // ── 노치 애니 3단계 끝 ────────────────────────────────
+
+    ctx.save();
+    ctx.beginPath();ctx.rect(cx,cy,cw,ch);
+    if(c.type==='notch'){
+      (r.ops||[]).forEach(function(o){
+        var oLeft2=o.x-Math.round(o.width/2);var ox=OX+oLeft2*sc, oy=OY+(H-o.y-o.height)*sc;
+        var ow=o.width*sc, oh=o.height*sc;
+        var ix1=Math.max(cx,ox),iy1=Math.max(cy,oy);
+        var ix2=Math.min(cx+cw,ox+ow),iy2=Math.min(cy+ch,oy+oh);
+        if(ix2>ix1&&iy2>iy1) ctx.rect(ix1,iy1,ix2-ix1,iy2-iy1);
+      });
+      ctx.clip('evenodd');
+    }
+    ctx.fillStyle=fill;ctx.fill();
+    ctx.strokeStyle=stroke;ctx.lineWidth=.7;ctx.stroke();
+    ctx.restore();
+
+    // 현재 보드 강조
+    if(isLast){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.strokeRect(cx+1,cy+1,cw-2,ch-2);}
+
+    // 보드 번호
+    if(cw>18&&ch>11){
+      ctx.fillStyle=isLast?'rgba(255,255,255,.95)':'rgba(255,255,255,.55)';
+      ctx.font='bold '+Math.max(7,Math.min(9,cw/6))+'px DM Mono,monospace';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      var lx=cx+cw/2, ly=cy+ch/2;
+      if(c.type==='notch'){lx=cx+cw*.28;ly=cy+ch*.28;}
+      ctx.fillText(c.code,lx,ly);
+    }
+  });
+
+  drawOps(ctx,r,sc,OX,OY);
+  drawDims(ctx,r,sc,OX,OY,PL,PB,cv.width,cv.height);
+
+  // 진행 표시
+  var tot=active.length;
+  var cur=G.bStep>=0?Math.min(G.bStep,tot):tot;
+  document.getElementById('animInd').textContent=G.bStep>=0?(cur+'/'+tot):'전체 '+tot;
+  document.getElementById('animProg').style.width=(tot?cur/tot*100:0)+'%';
+  document.getElementById('cvTitle').textContent=
+    '['+G.wall.storey+(G.wall.space?'|'+G.wall.space:'')+'] '+G.wall.name+' · '+r.orient+' · '+G.method+' · '+G.ply+'P';
+}
+
+function drawOps(ctx,r,sc,OX,OY){
+  (r.ops||[]).forEach(function(o){
+    var oLeft = o.x - Math.round(o.width/2); // IFC 중심점→왼쪽끝
+    var ox=OX+oLeft*sc, oy=OY+(r.H-o.y-o.height)*sc;
+    var ow=o.width*sc, oh=o.height*sc;
+    ctx.fillStyle='#0D111A';ctx.fillRect(ox,oy,ow,oh);
+    ctx.strokeStyle='#3A4A5E';ctx.lineWidth=1;
+    ctx.setLineDash([3,2]);ctx.strokeRect(ox,oy,ow,oh);ctx.setLineDash([]);
+    if(ow>28&&oh>14){
+      ctx.fillStyle='#3A4A5E';ctx.font='8px sans-serif';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText((o.type==='door'?'🚪':'🪟')+o.width+'×'+o.height,ox+ow/2,oy+oh/2);
+    }
+  });
+}
+
+function drawDims(ctx,r,sc,OX,OY,PL,PB,cvW,cvH){
+  ctx.fillStyle='rgba(90,122,154,.8)';ctx.font='9px DM Mono,monospace';
+  ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.fillText(r.W.toLocaleString()+'mm',OX+r.W*sc/2,OY+r.H*sc+4);
+  ctx.save();ctx.translate(OX-4,OY+r.H*sc/2);ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText(r.H.toLocaleString()+'mm',0,0);ctx.restore();
+  ctx.strokeStyle='#1C2A3E';ctx.lineWidth=1;
+  ctx.strokeRect(OX,OY,Math.round(r.W*sc),Math.round(r.H*sc));
+}
+
+// ━━━ 메트릭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ━━━ 벽별 요약 배지 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function upWallBadge(){
+  var el=document.getElementById('wallBadge');
+  var r=G.result; var w=G.wall;
+  if(!el||!r||!w){ if(el) el.style.display='none'; return; }
+  el.style.display='';
+
+  var lrColor=r.lr<0.05?'#15803d':r.lr<0.10?'#d97706':'#b91c1c';
+  var dirIcon=r.orient==='세로'?'↕':'↔';
+
+  // 2P 레이어 정보
+  var plyInfo='';
+  if(G.ply===2&&G._L1&&G._L2){
+    var l1F=G._L1.filter(function(c){return c.type==='full';}).length;
+    var l2F=G._L2.filter(function(c){return c.type==='full';}).length;
+    plyInfo='<span style="font-size:9px;color:#a855f7;border:1px solid rgba(168,85,247,.3);padding:1px 6px;border-radius:3px;margin-right:4px">L1 온장:'+l1F+' L2 온장:'+l2F+'</span>';
+  }
+  el.innerHTML=
+    '<span style="font-size:11px;font-weight:700;color:var(--text);margin-right:4px">'+w.name+'</span>'
+    +'<span style="font-size:10px;color:var(--t2);margin-right:8px">'+w.length+'×'+w.height+'mm</span>'
+    +plyInfo
+    // 방향
+    +'<span style="background:var(--acc-bg);color:var(--acc);border:1px solid rgba(79,124,255,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">'+dirIcon+' '+r.orient+'</span>&nbsp;'
+    // 온장
+    +'<span style="background:rgba(46,204,122,.12);color:#2ecc7a;border:1px solid rgba(46,204,122,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">온장 '+r.nF+'장</span>&nbsp;'
+    // 자른보드
+    +'<span style="background:rgba(240,180,41,.12);color:var(--amber);border:1px solid rgba(240,180,41,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">자른보드 '+(r.nE+r.nN)+'장</span>&nbsp;'
+    // 재사용
+    +'<span style="background:rgba(107,114,128,.1);color:var(--t2);border:1px solid var(--bd);padding:2px 8px;border-radius:4px;font-size:10px">재사용 0</span>&nbsp;'
+    // 절단횟수
+    +'<span style="background:rgba(138,92,246,.12);color:var(--purple);border:1px solid rgba(138,92,246,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">절단 '+r.cutCount+'회</span>&nbsp;'
+    // 로스율
+    +'<span style="background:rgba(0,0,0,.06);color:'+lrColor+';border:1px solid rgba(0,0,0,.1);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">로스율 '+(r.lr*100).toFixed(1)+'%</span>';
+}
+
+function upMetrics(){
+  var r=G.result; if(!r) return;
+  var mc=document.querySelectorAll('.mc');
+  var palletQty=G.mat==='ply'?100:990;
+  var palettes=Math.ceil(r.gs/palletQty);
+  var matLabel=G.mat==='ply'?'합판':'석고보드';
+  var items=[
+    [r.tot,'총 보드 수','온장+절단 ('+matLabel+')',''],
+    [r.nF+'장','온장 수','↑ 많을수록','c-green'],
+    [(r.nE+r.nN)+'장','절단 수','↓ 적을수록','c-amber'],
+    [(r.lr*100).toFixed(1)+'%','로스율','↓ 적을수록',''],
+    [r.nN+'장','노치절단','↓ 작업성↑','c-amber'],
+    [r.gs+'장','발주 매수','할증'+(r.mk*100).toFixed(0)+'%',''],
+    [palettes+'팔레트','발주 파레트',palletQty+'매/팔레트','c-blue']
+  ];
+  mc.forEach(function(el,i){
+    if(!items[i]) return;
+    el.innerHTML='<div class="mc-v '+(items[i][3]||'')+'">'+items[i][0]+'</div>'
+      +'<div class="mc-l">'+items[i][1]+'</div><div class="mc-d">'+items[i][2]+'</div>';
+  });
+}
+
+function upBoards(){
+  var tl={full:'온장',edge_cut:'직선절단',notch:'노치절단',reuse:'재사용'};
+  var tc={full:'var(--FULL_ST)',edge_cut:'var(--EDGE_ST)',notch:'var(--NOTCH_ST)',reuse:'var(--REUSE_ST)'};
+  var active=G.cells.filter(function(c){ return c.type!=='skip'; });
+  var el=document.getElementById('boardList');
+  el.innerHTML='';
+
+  // 2P이면 레이어 구분 헤더 표시
+  if(G.ply===2){
+    var h1=document.createElement('div');
+    h1.style.cssText='font-size:9px;font-weight:700;color:var(--purple);padding:4px 6px;background:rgba(138,92,246,.1);border-radius:4px;margin-bottom:3px';
+    h1.textContent='1P (오프셋 '+Math.min(STUD,Math.floor((G.result?G.result.bw:900)/2))+'mm)';
+    el.appendChild(h1);
+  }
+
+  active.forEach(function(c,i){
+    var div=document.createElement('div');
+    div.className='bi '+c.type+(G.bStep>=0&&i===G.bStep-1?' cur':'');
+    div.id='bi-'+i;
+    div.innerHTML='<span class="bi-code">'+c.code+'</span>'
+      +'<span class="bi-type" style="color:'+tc[c.type]+'">'+tl[c.type]+'</span>'
+      +'<span style="color:var(--t2);font-family:var(--mono)">'+Math.round(c.w)+'×'+Math.round(c.h)+'mm</span>'
+      ;
+    el.appendChild(div);
+  });
+
+  // 2P 2겹 목록
+  if(G.ply===2 && G.result){
+    var r=G.result;
+    var c2cells=placeGrid(r.W,r.H,r.ops,r.bw,r.bh,0).filter(function(c){return c.type!=='skip';});
+    var h2=document.createElement('div');
+    h2.style.cssText='font-size:9px;font-weight:700;color:var(--green);padding:4px 6px;background:rgba(38,190,120,.1);border-radius:4px;margin:6px 0 3px';
+    h2.textContent='2P (기준 레이어)';
+    el.appendChild(h2);
+    c2cells.forEach(function(c,i){
+      var div=document.createElement('div');
+      div.className='bi '+c.type;
+      div.innerHTML='<span class="bi-code" style="color:var(--green)">'+c.code+'</span>'
+        +'<span class="bi-type" style="color:'+tc[c.type]+'">'+tl[c.type]+'</span>'
+        +'<span style="color:var(--t2);font-family:var(--mono)">'+Math.round(c.w)+'×'+Math.round(c.h)+'mm</span>';
+      el.appendChild(div);
+    });
+  }
+
+}
+
+function upSchedule(){
+  if(!G.result||!G.wall) return;
+  var r=G.result,w=G.wall;
+  var palletQty=G.mat==='ply'?100:990;
+  var row=document.createElement('tr');
+  row.style.borderBottom='1px solid var(--bd)';
+  row.dataset.sum='1';
+  row.dataset.tot=r.tot;
+  row.dataset.full=r.nF;
+  row.dataset.cut=r.nE+r.nN;
+  row.dataset.cuts=r.cutCount||0;
+  row.dataset.lr=r.lr||0;
+  row.dataset.gs=r.gs||0;
+  row.dataset.dir=r.orient||'세로';
+  var lrPct=(r.lr*100).toFixed(1);
+  var lrC=r.lr<0.05?'var(--green)':r.lr<0.10?'var(--amber)':'var(--red)';
+  var dirIcon=r.orient==='가로'?'↔':'↕';
+  row.innerHTML='<td style="padding:3px 5px;font-weight:600;font-size:11px">'+w.name+'</td>'
+    +'<td style="padding:3px 5px;text-align:center;color:var(--t2)">'+w.storey+'</td>'
+    +'<td style="padding:3px 5px;text-align:center;font-weight:700">'+dirIcon+'</td>'
+    +'<td style="padding:3px 5px;text-align:right;font-family:var(--mono);color:var(--green)">'+r.nF+'</td>'
+    +'<td style="padding:3px 5px;text-align:right;font-family:var(--mono)">'+r.nE+'</td>'
+    +'<td style="padding:3px 5px;text-align:right;font-family:var(--mono);color:var(--amber)">'+r.nN+'</td>'
+    +'<td style="padding:3px 5px;text-align:right;font-family:var(--mono);font-weight:700;color:'+lrC+'">'+lrPct+'%</td>'
+    +'<td style="padding:3px 5px;text-align:right;font-family:var(--mono);color:var(--blue)">'+r.gs+'</td>';
+  var body=document.getElementById('scheduleBody');
+  // 이미 같은 벽이 있으면 교체
+  var existing=Array.from(body.querySelectorAll('tr')).find(function(tr){
+    return tr.cells[0]&&tr.cells[0].textContent===w.name;
+  });
+  if(existing) body.replaceChild(row, existing);
+  else {
+    if(body.rows[0]&&body.rows[0].cells[0]&&body.rows[0].cells[0].getAttribute('colspan'))
+      body.innerHTML=''; // 초기 안내문 제거
+    body.appendChild(row);
+  }
+}
+
+function upBoardList(){
+  upBoards();
+  // 현재 보드 스크롤
+  if(G.bStep>0){
+    var bi=document.getElementById('bi-'+(G.bStep-1));
+    var cont=document.getElementById('boardList');
+    if(bi&&cont){
+      var top=bi.offsetTop,h=bi.offsetHeight,ct=cont.scrollTop,ch=cont.clientHeight;
+      if(top<ct) cont.scrollTop=top;
+      else if(top+h>ct+ch) cont.scrollTop=top+h-ch;
+    }
+  }
+}
+
+// ━━━ 애니메이션 (setTimeout 재귀 — 실시간 속도 반영) ━━━━━━
+function aPlay(){
+  if(!G.result){ alert('먼저 실행하세요'); return; }
+  var r=G.result; // r 정의
+  var active=G.cells.filter(function(c){ return c.type!=='skip'; });
+  if(!active.length){ alert('부착할 보드가 없습니다'); return; }
+
+  // STEP 1: 그리드 선 하나씩
+  if(G.step===1){
+    var xB=calcXBreaks(r.W, r.ops, r.bw, G.ply===2?STUD:0);
+    var rows=Math.ceil(r.H/r.bh);
+    var totalLines=(G.method!=='float'?xB.length:0)+(rows-1);
+    if(G.gridStep<0) G.gridStep=0;
+    G.bAnim=true;
+    document.getElementById('btnPlay').style.display='none';
+    document.getElementById('btnPause').style.display='';
+    function gridTick(){
+      if(!G.bAnim) return;
+      G.gridStep++;
+      if(G.gridStep>totalLines){
+        G.bAnim=false; G.gridStep=-1;
+        document.getElementById('btnPlay').style.display='';
+        document.getElementById('btnPause').style.display='none';
+        drawAll(); return;
+      }
+      drawAll();
+      G.bTimer=setTimeout(gridTick, G.speed);
+    }
+    G.bTimer=setTimeout(gridTick, G.speed);
+    return;
+  }
+
+  // STEP 2~4: 보드 한 장씩
+  if(G.bStep<0) G.bStep=0;
+  G.bAnim=true;
+  document.getElementById('btnPlay').style.display='none';
+  document.getElementById('btnPause').style.display='';
+
+  function tick(){
+    if(!G.bAnim) return;
+    G.bStep++;
+    if(G.bStep>active.length){
+      G.bAnim=false; G.bStep=-1; G.notchPhase=0;
+      G.step=4; hiStep(4);
+      document.getElementById('btnPlay').style.display='';
+      document.getElementById('btnPause').style.display='none';
+      document.getElementById('stepLbl').textContent='완료';
+      document.getElementById('stepDesc').textContent=STEP_DESCS[4];
+      drawAll(); return;
+    }
+    // 단계 자동 전환
+    var cur=active[G.bStep-1];
+    if(cur){
+      var ns=cur.type==='full'?2:cur.type==='edge_cut'?3:4;
+      if(ns!==G.step){
+        G.step=ns; hiStep(ns);
+        document.getElementById('stepLbl').textContent=STEP_LBLS[ns]||'';
+        document.getElementById('stepDesc').textContent=STEP_DESCS[ns]||'';
+      }
+    }
+    // 노치 보드: 원판→절단→완성 3단계를 한 세트로 표현
+    // (현장에서 1장을 통째로 자르고 붙이는 과정)
+    if(cur&&cur.type==='notch'){
+      var nd=Math.max(60, Math.floor(G.speed*0.28)); // 각 단계 간격
+      G.notchPhase=1; drawAll(); // 원판
+      G.notchTimer=setTimeout(function(){
+        if(!G.bAnim){G.notchPhase=0;return;}
+        G.notchPhase=2; drawAll(); // 절단선
+        G.notchTimer=setTimeout(function(){
+          if(!G.bAnim){G.notchPhase=0;return;}
+          G.notchPhase=3; drawAll(); // 완성형 (한번에 부착)
+          G.notchTimer=setTimeout(function(){
+            G.notchPhase=0;
+            if(G.bAnim) G.bTimer=setTimeout(tick, Math.max(60,G.speed*0.3));
+          }, nd);
+        }, nd);
+      }, nd);
+    } else {
+      G.notchPhase=0;
+      drawAll();
+      G.bTimer=setTimeout(tick, G.speed);
+    }
+  }
+  G.bTimer=setTimeout(tick, G.speed);
+}
+
+
+function aPause(){
+  G.bAnim=false; clearTimeout(G.bTimer); G.bTimer=null;
+  clearTimeout(G.notchTimer); G.notchTimer=null; G.notchPhase=0;
+  document.getElementById('btnPlay').style.display='';
+  document.getElementById('btnPause').style.display='none';
+}
+function aReset(){
+  aPause(); G.bStep=0; G.gridStep=-1; G.step=2; G.notchPhase=0; hiStep(2);
+  document.getElementById('stepLbl').textContent=STEP_LBLS[2];
+  document.getElementById('stepDesc').textContent=STEP_DESCS[2];
+  drawAll();
+}
+function aNext(){
+  if(!G.result) return;
+  var n=G.cells.filter(function(c){ return c.type!=='skip'; }).length;
+  G.bStep=Math.min((G.bStep<0?0:G.bStep)+1, n);
+  drawAll();
+}
+function aPrev(){
+  if(!G.result) return;
+  G.bStep=G.bStep<=1?-1:G.bStep-1;
+  drawAll();
+}
+
+// ━━━ 전체 프로젝트 모드 (재사용 로직 제거) ━━━━━━━━━━━━━━━━
+var PROJ={running:false,results:[],log:[],wallSeq:[]};
+
+function floorOrder(v){
+  v=String(v||'').toUpperCase().trim();
+  if(v==='GL'||v==='G'||v==='1F') return 1;
+  if(v==='RF'||v==='ROOF') return 999;
+  var b=v.match(/B(\d+)/); if(b) return -parseInt(b[1],10);
+  var f=v.match(/(\d+)F/); if(f) return parseInt(f[1],10);
+  var n=parseInt(v,10); return isNaN(n)?50:n;
+}
+function projBuilding(w){ return w.building||w.dong||w.block||'A동'; }
+function projModule(w){ return w.module||w.unit||w.space||w.name||w.wall_id||'모듈'; }
+function projLabel(w){ return projBuilding(w)+' '+(w.storey||'층미상')+' '+projModule(w)+' / '+(w.name||w.wall_id); }
+function sortProjectWalls(arr){
+  return arr.filter(function(w){
+    return !EXCLUDED_STOREYS[w.storey] && w.length>=300 && w.height>=300;
+  }).sort(function(a,b){
+    var ab=projBuilding(a), bb=projBuilding(b);
+    if(ab!==bb) return ab<bb?-1:1;
+    var fa=floorOrder(a.storey), fb=floorOrder(b.storey);
+    if(fa!==fb) return fa-fb;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+}
+
+function runProjectMode(){
+  if(PROJ.running) return;
+  PROJ.running=true; PROJ.results=[]; PROJ.log=[];
+  document.getElementById('projPanel').style.display='';
+  document.getElementById('projStatus').textContent='계산 중...';
+  var mk=+document.getElementById('markup').value/100;
+  var BW=G.mat==='ply'?1220:900;
+  var BH=G.mat==='ply'?2440:1800;
+  var PAL=G.mat==='ply'?100:990;
+  var off=G.ply===2?Math.min(STUD,Math.floor(BW/2)):0;
+  PROJ.wallSeq=sortProjectWalls(IFC);
+  var idx=0, total=PROJ.wallSeq.length;
+  function chunk(){
+    var end=Math.min(idx+20,total);
+    for(var i=idx;i<end;i++){
+      var w=PROJ.wallSeq[i];
+      var cells=placeGrid(w.length,w.height,w.openings||[],BW,BH,off);
+      var active=cells.filter(function(c){ return c.type!=='skip'; });
+      var nF=0,nE=0,nN=0;
+      active.forEach(function(c){
+        if(c.type==='full') nF++;
+        else if(c.type==='edge_cut') nE++;
+        else if(c.type==='notch') nN++;
+      });
+      var oa=(w.openings||[]).reduce(function(s,o){ return s+o.width*o.height; },0);
+      var tot=nF+nE+nN;
+      var pBW=BW,pBH=BH,pOrient='세로';
+      var cV2=placeGrid(w.length,w.height,w.openings||[],BW,BH,off);
+      var cH2=placeGrid(w.length,w.height,w.openings||[],BH,BW,off);
+      var sV2=score(cV2),sH2=score(cH2);
+      if(sH2<sV2){pBW=BH;pBH=BW;pOrient='가로';active=cH2.filter(function(c){return c.type!=='skip';});}
+      nF=0;nE=0;nN=0;
+      active.forEach(function(c){if(c.type==='full')nF++;else if(c.type==='edge_cut')nE++;else if(c.type==='notch')nN++;});
+      tot=nF+nE+nN;
+      var oa2=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
+      var net2=(w.length*w.height-oa2)/1e6;
+      var gu2=tot*pBW*pBH;
+      var st2=active.reduce(function(s,c){return s+c.solid;},0);
+      var lr2=gu2>0?(gu2-st2)/gu2:0;
+      PROJ.results.push({wall:w,label:projLabel(w),seq:i+1,cells:active,orient:pOrient,
+        nF:nF,nE:nE,nN:nN,tot:tot,cutCount:nE+nN,lr:lr2,net:net2,
+        gs:Math.ceil(tot*(1+mk)),
+        net:(w.length*w.height-oa)/1e6});
+    }
+    idx=end;
+    document.getElementById('projBar').style.width=Math.round(idx/total*100)+'%';
+    document.getElementById('projStatus').textContent=idx+'/'+total+'개 벽 처리 중';
+    if(idx<total){ setTimeout(chunk,8); } else { PROJ.running=false; showProjResults(mk,BW,BH,PAL); }
+  }
+  chunk();
+}
+
+function showProjResults(mk,BW,BH,PAL){
+  // 세로/가로 카운트
+  var nVert=PROJ.results.filter(function(r){ return r.wall.orient==='세로'||(r.orient&&r.orient==='세로'); }).length;
+  var nHoriz=PROJ.results.filter(function(r){ return r.wall.orient==='가로'||(r.orient&&r.orient==='가로'); }).length;
+  PROJ._summary={nVert:nVert,nHoriz:nHoriz};
+  var res=PROJ.results;
+  var totNew=res.reduce(function(s,r){ return s+r.gs; },0);
+  var totAll=res.reduce(function(s,r){ return s+r.tot; },0);
+  var totNet=res.reduce(function(s,r){ return s+r.net; },0);
+  var grossArea=totNew*BW*BH/1e6;
+  var lr=grossArea>0?(grossArea-totNet)/grossArea:0;
+  var totCuts=res.reduce(function(s,r){return s+(r.cutCount||0);},0);
+  var avgLoss=res.length>0?res.reduce(function(s,r){return s+(r.lr||0);},0)/res.length:0;
+  document.getElementById('psTot').textContent=totNew.toLocaleString()+'장';
+  document.getElementById('psSave').textContent=totAll>0?(totNew/totAll).toFixed(2)+'배':'—';
+  document.getElementById('psPool').textContent='—';
+  document.getElementById('psLoss').textContent=(lr*100).toFixed(1)+'%';
+  document.getElementById('psPal').textContent=Math.ceil(totNew/PAL)+'팔레트';
+  document.getElementById('projStatus').textContent='✅ 완료 — '+PROJ.wallSeq.length+'개 벽';
+  // 추가 요약 지표 업데이트
+  var ps_cuts=document.getElementById('psCuts');
+  if(ps_cuts) ps_cuts.textContent=totCuts.toLocaleString()+'회';
+  var ps_lr=document.getElementById('psLossAvg');
+  if(ps_lr) ps_lr.textContent=(avgLoss*100).toFixed(1)+'%';
+  var ps_dir=document.getElementById('psDir');
+  if(ps_dir && PROJ._summary) ps_dir.textContent='세로'+PROJ._summary.nVert+' / 가로'+PROJ._summary.nHoriz;
+  var pl=document.getElementById('projList');
+  pl.innerHTML='';
+  res.forEach(function(r,i){
+    var div=document.createElement('div');
+    div.className='pr';
+    var lrColor=r.lr<0.05?'var(--green)':r.lr<0.10?'var(--amber)':'var(--red)';
+    var dirBadge=r.orient==='세로'?'↕세로':'↔가로';
+    div.innerHTML='<span style="min-width:28px;font-family:var(--mono);color:var(--t3);font-size:9px">#'+r.seq+'</span>'
+      +'<span style="min-width:68px;font-weight:600;font-size:11px">'+r.wall.name+'</span>'
+      +'<span style="color:var(--t2);font-size:9px;min-width:24px">'+r.wall.storey+'</span>'
+      +'<span style="font-size:9px;color:var(--blue);min-width:32px">'+dirBadge+'</span>'
+      +'<span style="color:var(--t2);font-size:9px;flex:1">온'+r.nF+' 절'+r.cutCount+'회</span>'
+      +'<span style="font-family:var(--mono);font-size:9px;color:'+lrColor+'">'+((r.lr||0)*100).toFixed(1)+'%</span>'
+      +'<span style="font-family:var(--mono);font-size:9px;margin-left:4px">'+r.gs+'장</span>';
+    div.title=r.label;
+    div.addEventListener('click',(function(ri){ return function(){
+      var rr=PROJ.results[ri];
+      selectWall(rr.wall);
+      closeProjPanel();
+      run();
+    };})(i));
+    pl.appendChild(div);
+  });
+}
+function closeProjPanel(){ document.getElementById('projPanel').style.display='none'; }
+
+// ━━━ 내보내기 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ━━━ 측정 메저 동적 계산 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 보드 발주 원칙 (유저 확인):
+//  온장   → 1장 그대로
+//  직선절단 → 발주는 900×1800(또는 1220×2440) 1장, 잘라서 사용
+//  노치절단 → 발주는 900×1800(또는 1220×2440) 1장, 구멍 뚫어서 사용
+//  ∴ 총 발주량 = (온장+직선절단+노치절단) × 1장 × 할증
+function calcMeasureStats(mat){
+  var bw=mat==='ply'?1220:900;
+  var bh=mat==='ply'?2440:1800;
+  var mk=+document.getElementById('markup').value/100;
+  var palQty=990; // 석고보드·합판 모두 990매/팔레트
+  var boardArea=bw*bh;
+  var sumGrossArea=0, sumNetArea=0;
+  var nF=0, nE=0, nN=0;
+  IFC.forEach(function(w){
+    if(!w||w.length<300||w.height<300) return;
+    if(EXCLUDED_STOREYS[w.storey]) return; // GL/RF 제외
+    var gA=w.length*w.height;
+    var opA=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
+    sumGrossArea+=gA;
+    sumNetArea+=Math.max(0,gA-opA);
+    placeGrid(w.length,w.height,w.openings||[],bw,bh,0).forEach(function(c){
+      if(c.type==='full') nF++;
+      else if(c.type==='edge_cut') nE++;
+      else if(c.type==='notch') nN++;
+    });
+  });
+  var legA=Math.ceil(sumGrossArea/boardArea);
+  var legB=Math.ceil(sumNetArea/boardArea);
+  var our=nF+nE+nN;
+  var legAgs=Math.ceil(legA*(1+mk));
+  var legBgs=Math.ceil(legB*(1+mk));
+  var ourGs=Math.ceil(our*(1+mk));
+  var lossA=legA>0?((legA*boardArea-sumNetArea)/(legA*boardArea)*100):0;
+  var lossB=legB>0?((legB*boardArea-sumNetArea)/(legB*boardArea)*100):0;
+  var lossOur=our>0?((our*boardArea-sumNetArea)/(our*boardArea)*100):0;
+  var f=function(n){return Math.round(n).toLocaleString();};
+  return {
+    bw:bw,bh:bh,palQty:palQty,mk:Math.round(mk*100),
+    netArea:(sumNetArea/1e6).toFixed(1),
+    legA:{tot:f(legA),gs:f(legAgs),loss:lossA.toFixed(1),pal:Math.ceil(legAgs/palQty)},
+    legB:{tot:f(legB),gs:f(legBgs),loss:lossB.toFixed(1),pal:Math.ceil(legBgs/palQty)},
+    our:{tot:f(our),nF:f(nF),nE:f(nE),nN:f(nN),gs:f(ourGs),loss:lossOur.toFixed(1),pal:Math.ceil(ourGs/palQty)}
+  };
+}
+function buildMeasureRows(d){
+  var tot=parseInt((d.our.tot||'0').replace(/,/g,''));
+  var base=parseInt((d.legA.tot||'0').replace(/,/g,''));
+  var f=function(n){return Math.ceil(n).toLocaleString();};
+  var rows=[
+    ['순 설치 면적', d.netArea+'㎡', d.netArea+'㎡'],
+    ['총 보드 수 (원판 기준)', d.legA.tot+'장', '<strong>'+d.our.tot+'장</strong>'],
+    ['발주 — 할증 5%', f(base*1.05)+'장', f(tot*1.05)+'장'],
+    ['발주 — 할증 6%', f(base*1.06)+'장', f(tot*1.06)+'장'],
+    ['발주 — 할증 7%', d.legA.gs+'장', '<strong>'+d.our.gs+'장</strong>'],
+    ['발주 — 할증 8%', f(base*1.08)+'장', f(tot*1.08)+'장'],
+    ['전체 로스율', d.legA.loss+'%', '<span style="color:#ECBA30">'+d.our.loss+'%</span>'],
+    ['개구부 반영', '<span style="color:#F04848">❌ 미반영</span>', '<span style="color:#26BE78">✅ 위치·크기</span>'],
+    ['파레트 수 (990매 기준)', d.legA.pal+'팔레트', d.our.pal+'팔레트']
+  ];
+  return rows.map(function(r,i){
+    var bg=i%2?'background:#0A1018;':'';
+    return '<tr style="border-bottom:1px solid #1C2A3E;'+bg+'">'
+      +'<td style="padding:8px 10px;font-weight:600;font-size:10px;color:#C8D8EC">'+r[0]+'</td>'
+      +'<td style="text-align:center;color:#6B7280;padding:8px;font-size:10px">'+r[1]+'</td>'
+      +'<td style="text-align:center;color:#3A8EFF;padding:8px;font-size:10px">'+r[2]+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function showCompare(){
+  document.getElementById('compareModal').style.display='block';
+  // 로딩 표시
+  var loadRow='<tr><td colspan="5" style="text-align:center;padding:20px;color:#5A7A9A">⏳ 641개 벽 계산 중...</td></tr>';
+  document.getElementById('m-gyp-body').innerHTML=loadRow;
+  document.getElementById('m-ply-body').innerHTML=loadRow;
+  // 비동기로 계산 (UI 먼저 렌더링)
+  setTimeout(function(){
+    var dG=calcMeasureStats('gyp');
+    document.getElementById('m-gyp-body').innerHTML=buildMeasureRows(dG);
+    var dP=calcMeasureStats('ply');
+    document.getElementById('m-ply-body').innerHTML=buildMeasureRows(dP);
+  }, 30);
+}
+
+
+
+function escHTML(v){
+  return String(v==null?'':v).replace(/[&<>"']/g,function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+function fmtNum(v){ return Number(v||0).toLocaleString(); }
+function typeKR(t){
+  return t==='full'?'온장':(t==='edge_cut'?'직선절단':(t==='notch'?'노치절단':'제외'));
+}
+function typeColor(t){
+  if(t==='full') return {fill:'#DFF3E8',stroke:'#26BE78'};
+  if(t==='edge_cut') return {fill:'#FFF3CC',stroke:'#ECBA30'};
+  if(t==='notch') return {fill:'#E8E4FF',stroke:'#7A6EE8'};
+  return {fill:'#EEEEEE',stroke:'#999999'};
+}
+function methodKR(m){
+  return m==='float'?'떠붙임':(m==='wood'?'각재 450mm':'스터드 450mm');
+}
+function materialKR(m){ return m==='ply'?'합판':'석고보드'; }
+function boardSpecText(r){ return fmtNum(r.bw)+'×'+fmtNum(r.bh)+'mm'; }
+
+// ━━━ 시공전개도 출력 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 현재 선택 벽의 계산 결과를 별도 HTML 문서로 구성한다.
+// 특징: 왼쪽 하단 기준 → 오른쪽 방향 → 다음 행으로 위로 올라가는 부착 순서를 번호로 표시한다.
+function buildLayoutSvg(cells,r,opt){
+  opt=opt||{};
+  var W=r.W, BH=r.H;
+  var maxW=980, maxH=420;
+  var sc=Math.min(maxW/W, maxH/BH);
+  if(!isFinite(sc)||sc<=0) sc=0.08;
+  var PL=52, PR=18, PT=28, PB=42;
+  var svgW=Math.round(W*sc)+PL+PR;
+  var svgH=Math.round(BH*sc)+PT+PB;
+  var OX=PL, OY=PT;
+  function sx(v){ return OX+v*sc; }
+  function sy(v){ return OY+(BH-v)*sc; }
+  function ln(x1,y1,x2,y2,stroke,dash,w){
+    return '<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="'+stroke+'" stroke-width="'+(w||1)+'" '+(dash?'stroke-dasharray="'+dash+'"':'')+'/>';
+  }
+  var opsList=(r.ops||[]).map(function(o){
+    var left=o.x-Math.round(o.width/2);
+    return {left:left,right:left+o.width,bottom:o.y,top:o.y+o.height,type:o.type};
+  });
+  // ★ x좌표 기준 정렬 → WIN/DOOR 번호가 왼→오 순서로 매겨짐
+  opsList.sort(function(a,b){ return a.left-b.left; });
+  // 노치 보드 evenodd 패스 미리 계산
+  cells.forEach(function(c){
+    if(c.type!=='notch') return;
+    var bx1=c.x,by1=c.y,bx2=c.x+c.w,by2=c.y+c.h;
+    var d='M '+sx(bx1).toFixed(1)+' '+sy(by2).toFixed(1)+
+          ' L '+sx(bx2).toFixed(1)+' '+sy(by2).toFixed(1)+
+          ' L '+sx(bx2).toFixed(1)+' '+sy(by1).toFixed(1)+
+          ' L '+sx(bx1).toFixed(1)+' '+sy(by1).toFixed(1)+' Z';
+    opsList.forEach(function(o){
+      var ix1=Math.max(bx1,o.left),iy1=Math.max(by1,o.bottom);
+      var ix2=Math.min(bx2,o.right),iy2=Math.min(by2,o.top);
+      if(ix2>ix1&&iy2>iy1){
+        d+=' M '+sx(ix1).toFixed(1)+' '+sy(iy2).toFixed(1)+
+           ' L '+sx(ix2).toFixed(1)+' '+sy(iy2).toFixed(1)+
+           ' L '+sx(ix2).toFixed(1)+' '+sy(iy1).toFixed(1)+
+           ' L '+sx(ix1).toFixed(1)+' '+sy(iy1).toFixed(1)+' Z';
+      }
+    });
+    c._np=d;
+  });
+  var SVG=[];
+  SVG.push('<svg width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'" xmlns="http://www.w3.org/2000/svg">');
+  SVG.push('<rect x="0" y="0" width="'+svgW+'" height="'+svgH+'" fill="#ffffff"/>');
+  SVG.push('<rect x="'+OX+'" y="'+OY+'" width="'+(W*sc).toFixed(1)+'" height="'+(BH*sc).toFixed(1)+'" fill="#FAFCFF" stroke="#111827" stroke-width="1.5"/>');
+  // 그리드 (450mm 기준)
+  for(var gx=STUD;gx<W;gx+=STUD) SVG.push(ln(sx(gx),OY,sx(gx),OY+BH*sc,'#A7B3C2','4 4',0.8));
+  for(var gy=STUD;gy<BH;gy+=STUD) SVG.push(ln(OX,sy(gy),OX+W*sc,sy(gy),'#E0E6EF','4 4',0.6));
+  // 보드 배치
+  cells.forEach(function(c,idx){
+    var col=typeColor(c.type);
+    var bx1=c.x,by1=c.y,bx2=c.x+c.w,by2=c.y+c.h;
+    var rx=sx(bx1),ry=sy(by2),rw=c.w*sc,rh=c.h*sc;
+    if(c.type==='notch'&&c._np){
+      SVG.push('<path d="'+c._np+'" fill="'+col.fill+'" stroke="'+col.stroke+'" stroke-width="1.2" fill-rule="evenodd"/>');
+      // 노치 절단선 (개구부 경계 - 보라 점선)
+      opsList.forEach(function(o){
+        var ix1=Math.max(bx1,o.left),iy1=Math.max(by1,o.bottom);
+        var ix2=Math.min(bx2,o.right),iy2=Math.min(by2,o.top);
+        if(ix2>ix1&&iy2>iy1){
+          if(ix1>bx1+1) SVG.push(ln(sx(ix1),sy(iy2),sx(ix1),sy(iy1),'#7C3AED','3 2',1.2));
+          if(ix2<bx2-1) SVG.push(ln(sx(ix2),sy(iy2),sx(ix2),sy(iy1),'#7C3AED','3 2',1.2));
+          if(iy1>by1+1) SVG.push(ln(sx(ix1),sy(iy1),sx(ix2),sy(iy1),'#7C3AED','3 2',1.2));
+          if(iy2<by2-1) SVG.push(ln(sx(ix1),sy(iy2),sx(ix2),sy(iy2),'#7C3AED','3 2',1.2));
+        }
+      });
+    } else {
+      SVG.push('<rect x="'+rx.toFixed(1)+'" y="'+ry.toFixed(1)+'" width="'+rw.toFixed(1)+'" height="'+rh.toFixed(1)+'" fill="'+col.fill+'" stroke="'+col.stroke+'" stroke-width="1.2"/>');
+    }
+    var lx=(c.type==='notch')?(rx+Math.min(rw*0.35,28)):(rx+rw/2);
+    var ly=(c.type==='notch')?(ry+Math.min(rh*0.35,24)):(ry+rh/2);
+    if(rw>28&&rh>16){
+      SVG.push('<text x="'+lx.toFixed(1)+'" y="'+(ly-4).toFixed(1)+'" text-anchor="middle" font-size="9" font-weight="700" fill="#111827">'+escHTML(c.code||('B-'+(idx+1)))+'</text>');
+      if(c.type==='notch'){
+        SVG.push('<text x="'+lx.toFixed(1)+'" y="'+(ly+7).toFixed(1)+'" text-anchor="middle" font-size="7" fill="#374151">'+Math.round(c.w)+'\u00d7'+Math.round(c.h)+'</text>');
+        var nd=[];
+        opsList.forEach(function(o){
+          var ix1=Math.max(bx1,o.left),iy1=Math.max(by1,o.bottom);
+          var ix2=Math.min(bx2,o.right),iy2=Math.min(by2,o.top);
+          if(ix2>ix1&&iy2>iy1) nd.push('\u2702'+(Math.round(ix2-ix1))+'\u00d7'+(Math.round(iy2-iy1)));
+        });
+        if(nd.length) SVG.push('<text x="'+lx.toFixed(1)+'" y="'+(ly+17).toFixed(1)+'" text-anchor="middle" font-size="7" fill="#7C3AED">'+nd.join(' ')+'</text>');
+      } else {
+        SVG.push('<text x="'+(rx+rw/2).toFixed(1)+'" y="'+(ry+rh/2+8).toFixed(1)+'" text-anchor="middle" font-size="8" fill="#4B5563">'+Math.round(c.w)+'\u00d7'+Math.round(c.h)+'</text>');
+      }
+    }
+  });
+  // 개구부 오버레이 (보드 위에 그려서 항상 보임)
+  opsList.forEach(function(o,i){
+    var ox=sx(Math.max(0,o.left)),oy=sy(o.top);
+    var ow=(Math.min(o.right,W)-Math.max(0,o.left))*sc;
+    var oh=(o.top-o.bottom)*sc;
+    if(ow<=0||oh<=0) return;
+    SVG.push('<rect x="'+ox.toFixed(1)+'" y="'+oy.toFixed(1)+'" width="'+ow.toFixed(1)+'" height="'+oh.toFixed(1)+'" fill="rgba(249,115,22,0.10)" stroke="#F97316" stroke-width="1.8" stroke-dasharray="6 4"/>');
+    SVG.push('<text x="'+(ox+ow/2).toFixed(1)+'" y="'+(oy+oh/2).toFixed(1)+'" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#9A3412" font-weight="600">'+(o.type==='door'?'DOOR':'WIN')+' '+(i+1)+'</text>');
+    SVG.push(ln(ox,OY,ox,OY+BH*sc,'#F97316','3 3',1));
+    SVG.push(ln(ox+ow,OY,ox+ow,OY+BH*sc,'#F97316','3 3',1));
+  });
+  // 치수선
+  SVG.push(ln(OX,OY+BH*sc+16,OX+W*sc,OY+BH*sc+16,'#111827','',1));
+  SVG.push('<text x="'+(OX+W*sc/2).toFixed(1)+'" y="'+(OY+BH*sc+32).toFixed(1)+'" text-anchor="middle" font-size="11" fill="#111827">벽 길이 '+fmtNum(r.W)+'mm</text>');
+  SVG.push(ln(OX-18,OY,OX-18,OY+BH*sc,'#111827','',1));
+  SVG.push('<text x="14" y="'+(OY+BH*sc/2).toFixed(1)+'" transform="rotate(-90 14 '+(OY+BH*sc/2).toFixed(1)+')" text-anchor="middle" font-size="11" fill="#111827">벽 높이 '+fmtNum(r.H)+'mm</text>');
+  SVG.push('<text x="'+OX+'" y="18" font-size="10" fill="#374151">부착:좌하단→우→상승  ○주황점선=개구부 경계  ○보라=노치절단  ※개구부 번호: x좌표 기준 왼→오 순서</text>');
+  SVG.push('</svg>');
+  return SVG.join('');
+}
+
+function exportLayout(){
+  if(!G.result||!G.wall){ alert('먼저 벽을 선택하고 시뮬레이션을 실행하세요'); return; }
+  var r=G.result, w=G.wall;
+  var matName=materialKR(G.mat), spec=boardSpecText(r);
+  var date=new Date();
+  var ds=date.getFullYear()+'.'+String(date.getMonth()+1).padStart(2,'0')+'.'+String(date.getDate()).padStart(2,'0');
+  var cells1=G.cells.slice();
+  var cells2=[];
+  if(G.ply===2){ cells2=placeGrid(r.W,r.H,r.ops,r.bw,r.bh,0); }
+  var allCells=G.ply===2?cells1.concat(cells2):cells1;
+  var count=function(arr,t){ return arr.filter(function(c){return c.type===t;}).length; };
+  var rows=allCells.map(function(c,i){
+    return '<tr><td>'+(i+1)+'</td><td>'+escHTML(c.code||'')+'</td><td>'+typeKR(c.type)+'</td><td class="num">'+fmtNum(c.x)+', '+fmtNum(c.y)+'</td><td class="num">'+fmtNum(Math.round(c.w))+'×'+fmtNum(Math.round(c.h))+'</td><td class="num">'+(c.solid/1e6).toFixed(3)+'㎡</td></tr>';
+  }).join('');
+  var opRows=(r.ops||[]).slice().sort(function(a,b){
+    // x좌표 기준 정렬 (왼→오 순서로 번호 매김)
+    var la=a.x-Math.round(a.width/2);
+    var lb=b.x-Math.round(b.width/2);
+    return la-lb;
+  }).map(function(o,i){
+    var left=o.x-Math.round(o.width/2);
+    return '<tr><td>'+(i+1)+'</td><td>'+(o.type==='door'?'문(Door)':'창문(Window)')+'</td><td class="num">x='+fmtNum(left)+'~'+fmtNum(left+o.width)+', y='+fmtNum(o.y)+'</td><td class="num">'+fmtNum(o.width)+'×'+fmtNum(o.height)+'mm</td></tr>';
+  }).join('') || '<tr><td colspan="4">개구부 없음</td></tr>';
+  var html='<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>석고보드·합판 배치 시스템 v14</title><style>'+
+    '@page{size:A3 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#111827;margin:0;background:#F3F4F6;font-size:12px}.sheet{background:white;margin:16px auto;padding:18px;max-width:1320px;box-shadow:0 8px 30px rgba(0,0,0,.12)}h1{font-size:22px;margin:0 0 4px}.sub{color:#6B7280;margin-bottom:12px}.top{display:grid;grid-template-columns:1.4fr 1fr;gap:12px;margin-bottom:12px}.box{border:1px solid #D1D5DB;border-radius:8px;padding:10px;background:#fff}.box h2{font-size:14px;margin:0 0 8px}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.kv{border:1px solid #E5E7EB;border-radius:6px;padding:6px}.k{font-size:10px;color:#6B7280}.v{font-weight:700;margin-top:2px}.legend{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.lg{display:flex;align-items:center;gap:5px}.dot{width:14px;height:10px;border:1px solid #999}.full{background:#DFF3E8;border-color:#26BE78}.edge{background:#FFF3CC;border-color:#ECBA30}.notch{background:#E8E4FF;border-color:#7A6EE8}.svgbox{border:1px solid #D1D5DB;border-radius:8px;padding:8px;margin-bottom:12px;overflow:auto}.layer-title{font-weight:800;margin:10px 0 6px;font-size:14px}.note{background:#F9FAFB;border-left:4px solid #3A8EFF;padding:9px;line-height:1.7;margin:8px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th{background:#111827;color:white;padding:6px;border:1px solid #374151}td{padding:5px;border:1px solid #D1D5DB}td.num{text-align:right;font-family:Consolas,monospace}.small{font-size:11px;color:#6B7280}.actions{position:sticky;top:0;background:#111827;color:white;padding:8px;text-align:right}@media print{body{background:white}.sheet{margin:0;box-shadow:none;max-width:none}.actions{display:none}}button{padding:7px 12px;border:0;border-radius:5px;background:#3A8EFF;color:white;font-weight:700;cursor:pointer}</style></head><body>'+
+    '<div class="actions"><button onclick="window.print()">PDF/인쇄</button></div><div class="sheet">'+
+    '<h1>시공전개도 · '+escHTML(matName)+' 배치 결과</h1><div class="sub">'+escHTML(w.name)+' · '+escHTML(w.storey)+(w.space?' · 공간 '+escHTML(w.space):'')+' · 출력일 '+ds+'</div>'+
+    '<div class="top"><div class="box"><h2>① 벽·시공 조건</h2><div class="meta">'+
+    '<div class="kv"><div class="k">벽 크기</div><div class="v">'+fmtNum(r.W)+'×'+fmtNum(r.H)+'mm</div></div><div class="kv"><div class="k">자재 규격</div><div class="v">'+spec+'</div></div><div class="kv"><div class="k">공법</div><div class="v">'+methodKR(G.method)+'</div></div><div class="kv"><div class="k">겹수/방향</div><div class="v">'+G.ply+'P / '+escHTML(r.orient)+'</div></div>'+
+    '<div class="kv"><div class="k">온장</div><div class="v">'+r.nF+'장</div></div><div class="kv"><div class="k">직선절단</div><div class="v">'+r.nE+'장</div></div><div class="kv"><div class="k">노치절단</div><div class="v">'+r.nN+'장</div></div><div class="kv"><div class="k">발주 매수</div><div class="v">'+r.gs+'장</div></div></div></div>'+
+    '<div class="box"><h2>② 절단 분류 기준</h2><div class="legend"><span class="lg"><span class="dot full"></span>온장</span><span class="lg"><span class="dot edge"></span>직선절단</span><span class="lg"><span class="dot notch"></span>노치절단</span></div><div class="small">부착 순서: 왼쪽 하단에서 시작하여 오른쪽으로 붙이고, 한 행이 끝나면 위 행으로 이동합니다. 2P는 줄눈 겹침을 줄이기 위해 한 레이어에 오프셋을 적용합니다.</div></div></div>'+
+    '<div class="note"><b>핵심:</b> 본 전개도는 단순 면적 나눗셈이 아니라 벽 전개면에서 보드가 실제로 놓이는 위치를 기준으로 온장·직선절단·노치절단을 구분합니다. 개구부가 있는 경우에는 개구부 좌우 경계선을 절단 기준선으로 반영합니다.</div>';
+  html+='<div class="layer-title">③ 1P 전개도 '+(G.ply===2?'(오프셋 적용 레이어)':'')+'</div><div class="svgbox">'+buildLayoutSvg(cells1,r,{label:'1P'})+'</div>';
+  if(G.ply===2){ html+='<div class="layer-title">④ 2P 전개도 (기준 레이어)</div><div class="svgbox">'+buildLayoutSvg(cells2,r,{label:'2P'})+'</div>'; }
+  html+='<div class="box"><h2>개구부 목록</h2><table><tr><th>No.</th><th>종류</th><th>위치</th><th>크기</th></tr>'+opRows+'</table></div>'+
+    '<div class="box" style="margin-top:12px"><h2>보드별 시공·절단 목록</h2><table><tr><th>순서</th><th>코드</th><th>분류</th><th>좌표 x,y(mm)</th><th>보드 크기(mm)</th><th>설치면적</th></tr>'+rows+'</table></div>'+
+    '<div class="note"><b>확인 필요:</b> 본 전개도는 현재 HTML의 휴리스틱/룰베이스 계산 결과를 출력한 것입니다. 회사 실사용 단계에서는 실제 스터드·각재 폭, 체결 간격, 개구부 보강재, 업체별 발주 단위, 현장 시공 순서 검증을 추가해야 합니다.</div>'+
+    '</div></body></html>';
+  var win=window.open('','_blank');
+  if(win){ win.document.open(); win.document.write(html); win.document.close(); }
+  else{
+    var a=document.createElement('a');
+    a.href='data:text/html;charset=utf-8,'+encodeURIComponent(html);
+    a.download='시공전개도_'+w.name+'_'+matName+'.html';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+}
+
+function exportR(){
+  if(!G.result||!G.wall){ alert('먼저 실행하세요'); return; }
+  var r=G.result, w=G.wall;
+  var mk=r.mk||0.07;
+  var matName=G.mat==='ply'?'합판':'석고보드';
+  var spec=G.mat==='ply'?'1,220×2,440mm':'900×1,800mm';
+  var palletQty=G.mat==='ply'?100:990;
+  var palettes=Math.ceil(r.gs/palletQty);
+  var today=new Date();
+  var ds=today.getFullYear()+'.'+(today.getMonth()+1)+'.'+today.getDate();
+  var H=['<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">',
+    '<head><meta charset="UTF-8"><style>',
+    'body{font-family:맑은고딕,Arial;font-size:10pt;margin:20px}',
+    'h2{font-size:14pt;margin:0 0 4px}p{color:#666;font-size:9pt;margin:0 0 14px}',
+    'table{border-collapse:collapse;width:100%}',
+    'th{background:#404040;color:#fff;font-weight:bold;padding:7px 10px;border:1px solid #666;text-align:center;font-size:10pt}',
+    '.sec{background:#D9D9D9;font-weight:bold;color:#000;padding:6px 9px;border:1px solid #AAAAAA;font-size:10pt}',
+    'td{padding:5px 9px;border:1px solid #CCCCCC;font-size:10pt}',
+    '.val{text-align:right;font-family:Consolas,monospace}',
+    '.full{background:#E2EFDA}.cut{background:#FFF2CC}.notch{background:#DDEEFF}',
+    '</style></head><body>',
+    '<h2>'+matName+' 발주 데이터</h2>',
+    '<p>'+w.name+' · '+w.storey+(w.space?' | '+w.space:'')+'  |  출력일: '+ds+'</p>',
+    '<table>',
+    '<tr><th colspan="4" style="text-align:left">■ 벽 정보</th></tr>',
+    '<tr><td class="sec">벽 이름</td><td>'+w.name+'</td><td class="sec">층</td><td>'+w.storey+'</td></tr>',
+    '<tr><td class="sec">공간</td><td>'+(w.space||'—')+'</td><td class="sec">개구부</td><td>'+(r.ops||[]).length+'개</td></tr>',
+    '<tr><td class="sec">가로(mm)</td><td class="val">'+r.W.toLocaleString()+'</td><td class="sec">높이(mm)</td><td class="val">'+r.H.toLocaleString()+'</td></tr>',
+    '<tr><td class="sec">공법</td><td>'+G.method+'</td><td class="sec">겹수/방향</td><td>'+G.ply+'P / '+r.orient+'</td></tr>',
+    '<tr><th colspan="4" style="text-align:left;padding-top:12px">■ 자재 정보</th></tr>',
+    '<tr><td class="sec">자재명</td><td>'+matName+'</td><td class="sec">규격</td><td>'+spec+'</td></tr>',
+    '<tr><td class="sec">표준 폭</td><td class="val">'+r.bw+'mm</td><td class="sec">표준 높이</td><td class="val">'+r.bh+'mm</td></tr>',
+    '<tr><th colspan="4" style="text-align:left;padding-top:12px">■ 물량 산출</th></tr>',
+    '<tr><th>구분</th><th>수량(장)</th><th>비율(%)</th><th>비고</th></tr>',
+    '<tr class="full"><td>온장</td><td class="val">'+r.nF+'</td><td class="val">'+(r.tot>0?(r.nF/r.tot*100).toFixed(1):'0')+'%</td><td>절단 없음 · 원판 그대로 부착</td></tr>',
+    '<tr class="cut"><td>직선절단</td><td class="val">'+r.nE+'</td><td class="val">'+(r.tot>0?(r.nE/r.tot*100).toFixed(1):'0')+'%</td><td>1회 직선 컷 · 가장자리</td></tr>',
+    '<tr class="notch"><td>노치절단</td><td class="val">'+r.nN+'</td><td class="val">'+(r.tot>0?(r.nN/r.tot*100).toFixed(1):'0')+'%</td><td>ㄱ·ㄴ형 · 개구부 겹침</td></tr>',
+    '<tr><td class="sec">합계</td><td class="val sec">'+r.tot+'</td><td class="val">100%</td><td></td></tr>',
+    '<tr><th colspan="4" style="text-align:left;padding-top:12px">■ 발주 산출</th></tr>',
+    '<tr><td class="sec">순 설치 면적</td><td class="val">'+r.net.toFixed(2)+' ㎡</td><td class="sec">로스율</td><td class="val">'+(r.lr*100).toFixed(1)+'%</td></tr>',
+    '<tr><td class="sec">할증률</td><td class="val">'+Math.round(mk*100)+'% (5~8% 범위)</td><td class="sec">발주 매수</td><td class="val sec" style="font-weight:bold;font-size:12pt">'+r.gs+' 장</td></tr>',
+    '<tr><td class="sec">파레트 수</td><td class="val sec" style="font-weight:bold;font-size:12pt">'+palettes+' 팔레트</td><td class="sec">매/팔레트</td><td class="val">'+palletQty+'</td></tr>',
+  ];
+  H.push('</table></body></html>');
+  var a=document.createElement('a');
+  a.href='data:application/vnd.ms-excel;charset=utf-8,'+encodeURIComponent(H.join('\n'));
+  a.download='발주데이터_'+w.name+'_'+matName+'.xls';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function exportJSON(){
+  if(!G.result||!G.wall) return alert('먼저 실행하세요');
+  var r=G.result,w=G.wall;
+  var d=JSON.stringify({
+    wall:{name:w.name,storey:w.storey,space:w.space,length:r.W,height:r.H},
+    settings:{method:G.method,ply:G.ply,mat:G.mat,orient:r.orient,bw:r.bw,bh:r.bh},
+    result:{total:r.tot,full:r.nF,edge:r.nE,notch:r.nN,reuse:r.nR,
+      lossRate:(r.lr*100).toFixed(1)+'%',grossSheets:r.gs}
+  },null,2);
+  var a=document.createElement('a');
+  a.href='data:text/json;charset=utf-8,'+encodeURIComponent(d);
+  a.download='배치데이터_'+w.name+'.json';a.click();
+}
+
+
+// ━━━ 전체 요약 즉시 계산 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function computeSummary(){
+  var mk=+document.getElementById('markup').value/100;
+  var BW=G.mat==='ply'?1220:900;
+  var BH=G.mat==='ply'?2440:1800;
+  var PAL=G.mat==='ply'?100:990;
+  var off=G.ply===2?Math.min(STUD,Math.floor(BW/2)):0;
+
+  var sWalls=0,sTot=0,sFull=0,sCut=0,sCuts=0,sGs=0,sRemnants=0;
+  var sGuTotal=0,sStTotal=0,sGrossArea=0,sNetArea=0;
+  var sVert=0,sHoriz=0,sMixed=0;
+
+  var validWalls=IFC.filter(function(w){
+    return true; // IFC 데이터는 이미 전처리 완료 (파라펫·소형 제거)
+  });
+
+  validWalls.forEach(function(w){
+    var ops=w.openings||[];
+    // 면적 계산
+    var gross=w.length*w.height;
+    var opArea=ops.reduce(function(s,o){return s+o.width*o.height;},0);
+    var net=gross-opArea;
+    sGrossArea+=gross; sNetArea+=net;
+
+    // 배치 계산 (세로/가로 비교)
+    var cV=placeGrid(w.length,w.height,ops,BW,BH,off);
+    var cH=placeGrid(w.length,w.height,ops,BH,BW,off);
+    var sV=score(cV),sH=score(cH);
+    var cells,bw,bh,dir;
+    if(sV<=sH){cells=cV;bw=BW;bh=BH;dir='세로';}
+    else{cells=cH;bw=BH;bh=BW;dir='가로';}
+
+    var active=cells.filter(function(c){return c.type!=='skip';});
+    var nF=0,nE=0,nN=0;
+    active.forEach(function(c){
+      if(c.type==='full') nF++;
+      else if(c.type==='edge_cut') nE++;
+      else if(c.type==='notch') nN++;
+    });
+    var tot=nF+nE+nN;
+    var gu=tot*bw*bh;
+    var st=active.reduce(function(s,c){return s+c.solid;},0);
+    var gs=Math.ceil(tot*(1+mk));
+
+    sWalls++;
+    sTot+=tot; sFull+=nF; sCut+=nE+nN; sCuts+=nE+nN;
+    sGuTotal+=gu; sStTotal+=st; sGs+=gs;
+    sRemnants+=nE+nN; // 절단된 조각 수
+    if(dir==='세로') sVert++; else sHoriz++;
+  });
+
+  var lr=sGuTotal>0?(sGuTotal-sStTotal)/sGuTotal:0;
+  var pal=Math.ceil(sGs/PAL);
+  var palRem=sGs-(pal-1)*PAL;
+
+  document.getElementById('sum-walls').textContent   = sWalls.toLocaleString()+'개';
+  document.getElementById('sum-gross').textContent   = (sGrossArea/1e6).toFixed(2);
+  document.getElementById('sum-net').textContent     = (sNetArea/1e6).toFixed(2);
+  document.getElementById('sum-tot').textContent     = sTot.toLocaleString();
+  document.getElementById('sum-full').textContent    = sFull.toLocaleString();
+  document.getElementById('sum-cut').textContent     = sCut.toLocaleString();
+  document.getElementById('sum-reuse').textContent   = '0';
+  document.getElementById('sum-order').textContent   = (pal-1)+' 팔레트 + '+palRem+'장';
+  document.getElementById('sum-cuts').textContent    = sCuts.toLocaleString();
+  document.getElementById('sum-dir').textContent     = sVert+' / '+sHoriz+' / '+sMixed;
+  document.getElementById('sum-remnants').textContent= sRemnants.toLocaleString();
+  document.getElementById('sum-loss').textContent    = (lr*100).toFixed(2)+'%';
+}
+
+
+// ━━━ 초기화 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+filterWalls();
+computeSummary();
+
+
+/* ===== 평가지표 정확분석용 JSON Exporter V3 - fixed =====
+   이 코드는 기존 V14 계산 결과 객체를 읽어 JSON으로 저장합니다.
+   단일 벽: 먼저 벽 선택 후 시뮬레이션 실행 → 벽 평가JSON
+   프로젝트: 먼저 전체 프로젝트 실행 → 프로젝트 평가JSON
+*/
+function __eval_json_num(v){
+  var n = Number(v);
+  return isFinite(n) ? n : 0;
+}
+function __eval_json_setting(){
+  var mat = (window.G && G.mat) ? G.mat : 'gyp';
+  var BW = mat === 'ply' ? 1220 : 900;
+  var BH = mat === 'ply' ? 2440 : 1800;
+  var markupEl = document.getElementById('markup');
+  return {
+    material: mat,
+    materialName: mat === 'ply' ? '합판' : '석고보드',
+    boardWidth_mm: BW,
+    boardHeight_mm: BH,
+    boardArea_m2: BW * BH / 1000000,
+    ply: (window.G && G.ply) ? G.ply : null,
+    method: (window.G && G.method) ? G.method : null,
+    markupRate_percent: markupEl ? __eval_json_num(markupEl.value) : 0,
+    palletUnitSheets: mat === 'ply' ? 50 : 990
+  };
+}
+function __eval_json_row(r, wall, idx){
+  r = r || {};
+  wall = wall || r.wall || {};
+  var totalSheets = __eval_json_num(r.tot != null ? r.tot : (r.totalSheets != null ? r.totalSheets : 0));
+  var fullSheets = __eval_json_num(r.nF != null ? r.nF : (r.fullSheets != null ? r.fullSheets : 0));
+  var edgeCutSheets = __eval_json_num(r.nE != null ? r.nE : (r.edgeCutSheets != null ? r.edgeCutSheets : 0));
+  var notchCutSheets = __eval_json_num(r.nN != null ? r.nN : (r.notchCutSheets != null ? r.notchCutSheets : 0));
+  var reuseSheets = __eval_json_num(r.nR != null ? r.nR : (r.reuseSheets != null ? r.reuseSheets : 0));
+  var cutCount = __eval_json_num(r.cutCount != null ? r.cutCount : (r.cuts != null ? r.cuts : 0));
+  var netArea = __eval_json_num(r.net != null ? r.net : (r.netArea_m2 != null ? r.netArea_m2 : 0));
+  var ordered = __eval_json_num(r.gs != null ? r.gs : (r.orderedSheets != null ? r.orderedSheets : totalSheets));
+  var loss = null;
+  if(r.lr != null) loss = __eval_json_num(r.lr) * 100;
+  else if(r.lossRate_percent != null) loss = __eval_json_num(r.lossRate_percent);
+  return {
+    rowIndex: idx + 1,
+    wallName: wall.name || r.wallName || '',
+    wallId: wall.id || r.wallId || '',
+    storey: wall.storey || r.storey || '',
+    space: wall.space || r.space || '',
+    wallLength_mm: __eval_json_num(wall.L != null ? wall.L : (wall.length != null ? wall.length : r.wallLength_mm)),
+    wallHeight_mm: __eval_json_num(wall.H != null ? wall.H : (wall.height != null ? wall.height : r.wallHeight_mm)),
+    openingCount: Array.isArray(wall.openings) ? wall.openings.length : __eval_json_num(r.openingCount),
+    orient: r.orient || r.direction || '',
+    totalSheets: totalSheets,
+    fullSheets: fullSheets,
+    edgeCutSheets: edgeCutSheets,
+    notchCutSheets: notchCutSheets,
+    reuseSheets: reuseSheets,
+    cutCount: cutCount,
+    netArea_m2: netArea,
+    orderedSheets: ordered,
+    lossRate_percent: loss
+  };
+}
+function __eval_json_summary(rows, settings){
+  var s = {
+    wallCount: rows.length,
+    totalSheets: 0,
+    orderedSheets: 0,
+    fullSheets: 0,
+    edgeCutSheets: 0,
+    notchCutSheets: 0,
+    reuseSheets: 0,
+    cutCount: 0,
+    netArea_m2: 0,
+    openingCount: 0
+  };
+  rows.forEach(function(r){
+    s.totalSheets += __eval_json_num(r.totalSheets);
+    s.orderedSheets += __eval_json_num(r.orderedSheets);
+    s.fullSheets += __eval_json_num(r.fullSheets);
+    s.edgeCutSheets += __eval_json_num(r.edgeCutSheets);
+    s.notchCutSheets += __eval_json_num(r.notchCutSheets);
+    s.reuseSheets += __eval_json_num(r.reuseSheets);
+    s.cutCount += __eval_json_num(r.cutCount);
+    s.netArea_m2 += __eval_json_num(r.netArea_m2);
+    s.openingCount += __eval_json_num(r.openingCount);
+  });
+  s.boardArea_m2 = settings.boardArea_m2;
+  s.grossBoardArea_m2 = s.orderedSheets * settings.boardArea_m2;
+  s.lossRate_percent = s.grossBoardArea_m2 > 0 ? (s.grossBoardArea_m2 - s.netArea_m2) / s.grossBoardArea_m2 * 100 : null;
+  s.fullRatio_percent = s.totalSheets > 0 ? s.fullSheets / s.totalSheets * 100 : null;
+  s.edgeCutRatio_percent = s.totalSheets > 0 ? s.edgeCutSheets / s.totalSheets * 100 : null;
+  s.notchCutRatio_percent = s.totalSheets > 0 ? s.notchCutSheets / s.totalSheets * 100 : null;
+  s.reuseRatio_percent = s.totalSheets > 0 ? s.reuseSheets / s.totalSheets * 100 : null;
+  s.cutsPerWall = s.wallCount > 0 ? s.cutCount / s.wallCount : null;
+  s.notchPerOpening = s.openingCount > 0 ? s.notchCutSheets / s.openingCount : null;
+  s.palletCount = settings.palletUnitSheets ? Math.ceil(s.orderedSheets / settings.palletUnitSheets) : null;
+  return s;
+}
+function __eval_json_download(data, filename){
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 500);
+}
+function exportSingleWallEvaluationJSON_V3(){
+  if(!(window.G && G.result)){
+    alert('먼저 벽 하나를 선택하고 시뮬레이션 실행을 눌러주세요.');
+    return;
+  }
+  var settings = __eval_json_setting();
+  var rows = [__eval_json_row(G.result, G.wall || {}, 0)];
+  var data = {
+    schema: 'M3_BOARD_EVALUATION_RESULT',
+    version: '3.0',
+    scope: 'single_wall',
+    createdAt: new Date().toISOString(),
+    settings: settings,
+    summary: __eval_json_summary(rows, settings),
+    rows: rows
+  };
+  __eval_json_download(data, '평가지표_벽단위_' + (rows[0].wallName || 'wall') + '_' + settings.materialName + '.json');
+}
+function exportProjectEvaluationJSON_V3(){
+  var settings = __eval_json_setting();
+  var rows = [];
+  if(window.PROJ && PROJ.results && PROJ.results.length){
+    rows = PROJ.results.map(function(r, i){ return __eval_json_row(r, r.wall || {}, i); });
+  } else if(window.PROJ_RESULTS && PROJ_RESULTS.length){
+    rows = PROJ_RESULTS.map(function(r, i){ return __eval_json_row(r, r.wall || {}, i); });
+  } else if(window.G && G.projectResults && G.projectResults.length){
+    rows = G.projectResults.map(function(r, i){ return __eval_json_row(r, r.wall || {}, i); });
+  }
+  if(!rows.length){
+    alert('전체 프로젝트 결과가 없습니다. 먼저 상단의 “전체 프로젝트” 버튼을 실행한 뒤 프로젝트 평가JSON을 눌러주세요.');
+    return;
+  }
+  var data = {
+    schema: 'M3_BOARD_EVALUATION_RESULT',
+    version: '3.0',
+    scope: 'project',
+    createdAt: new Date().toISOString(),
+    settings: settings,
+    summary: __eval_json_summary(rows, settings),
+    rows: rows
+  };
+  __eval_json_download(data, '평가지표_프로젝트전체_' + settings.materialName + '.json');
+}
+
+</script>
+</body>
+</html>
