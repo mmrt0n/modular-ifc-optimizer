@@ -1399,8 +1399,21 @@ function upWallBadge(){
     +'<span style="background:rgba(46,204,122,.12);color:#2ecc7a;border:1px solid rgba(46,204,122,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">온장 '+r.nF+'장</span>&nbsp;'
     // 자른보드
     +'<span style="background:rgba(240,180,41,.12);color:var(--amber);border:1px solid rgba(240,180,41,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">자른보드 '+(r.nE+r.nN)+'장</span>&nbsp;'
-    // 재사용
-    +'<span style="background:rgba(107,114,128,.1);color:var(--t2);border:1px solid var(--bd);padding:2px 8px;border-radius:4px;font-size:10px">재사용 0</span>&nbsp;'
+    // 재사용 (동적 계산)
+    +(function(){
+      var pool=new ReusePool();
+      var nr=0;
+      (G.cells||[]).forEach(function(c){
+        if(c.type==='edge_cut'){
+          if(pool.tryUse(c.w,c.h)){ nr++; }
+          else { collectScraps(c,r.bw,r.bh,pool); }
+        } else if(c.type==='notch'){
+          pool.add(r.bw-c.w,c.h); pool.add(c.w,r.bh-c.h);
+        }
+      });
+      var col=nr>0?'var(--green)':'var(--t2)';
+      return '<span style="background:rgba(107,114,128,.1);color:'+col+';border:1px solid var(--bd);padding:2px 8px;border-radius:4px;font-size:10px">재사용 '+nr+'장</span>&nbsp;';
+    })()
     // 절단횟수
     +'<span style="background:rgba(138,92,246,.12);color:var(--purple);border:1px solid rgba(138,92,246,.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">절단 '+r.cutCount+'회</span>&nbsp;'
     // 로스율
@@ -1639,8 +1652,34 @@ function aPrev(){
   drawAll();
 }
 
-// ━━━ 전체 프로젝트 모드 (재사용 로직 제거) ━━━━━━━━━━━━━━━━
+// ━━━ 재사용 풀 (ReusePool) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var MIN_REUSE_W=300, MIN_REUSE_H=450;
+function ReusePool(){this.pieces=[];this.totalAdded=0;this.totalUsed=0;}
+ReusePool.prototype.add=function(w,h){
+  if(w>=MIN_REUSE_W&&h>=MIN_REUSE_H){this.pieces.push({w:w,h:h});this.totalAdded++;}
+};
+ReusePool.prototype.tryUse=function(needW,needH){
+  for(var i=0;i<this.pieces.length;i++){
+    var p=this.pieces[i];
+    if(p.w>=needW&&p.h>=needH){
+      this.pieces.splice(i,1);this.totalUsed++;
+      this.add(p.w-needW,needH);
+      this.add(p.w,p.h-needH);
+      return true;
+    }
+  }
+  return false;
+};
+ReusePool.prototype.size=function(){return this.pieces.length;};
+function collectScraps(cell,bw,bh,pool){
+  var offW=bw-cell.w, offH=bh-cell.h;
+  if(offW>0) pool.add(offW,cell.h);
+  if(offH>0) pool.add(cell.w,offH);
+}
+
+// ━━━ 전체 프로젝트 모드 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var PROJ={running:false,results:[],log:[],wallSeq:[]};
+var PROJ_POOL=null;
 
 function floorOrder(v){
   v=String(v||'').toUpperCase().trim();
@@ -1675,39 +1714,40 @@ function runProjectMode(){
   var BH=G.mat==='ply'?2440:1800;
   var PAL=G.mat==='ply'?100:990;
   var off=G.ply===2?Math.min(STUD,Math.floor(BW/2)):0;
+  PROJ_POOL=new ReusePool();
   PROJ.wallSeq=sortProjectWalls(IFC);
   var idx=0, total=PROJ.wallSeq.length;
   function chunk(){
     var end=Math.min(idx+20,total);
     for(var i=idx;i<end;i++){
       var w=PROJ.wallSeq[i];
-      var cells=placeGrid(w.length,w.height,w.openings||[],BW,BH,off);
-      var active=cells.filter(function(c){ return c.type!=='skip'; });
-      var nF=0,nE=0,nN=0;
-      active.forEach(function(c){
-        if(c.type==='full') nF++;
-        else if(c.type==='edge_cut') nE++;
-        else if(c.type==='notch') nN++;
-      });
-      var oa=(w.openings||[]).reduce(function(s,o){ return s+o.width*o.height; },0);
-      var tot=nF+nE+nN;
       var pBW=BW,pBH=BH,pOrient='세로';
-      var cV2=placeGrid(w.length,w.height,w.openings||[],BW,BH,off);
-      var cH2=placeGrid(w.length,w.height,w.openings||[],BH,BW,off);
-      var sV2=score(cV2),sH2=score(cH2);
-      if(sH2<sV2){pBW=BH;pBH=BW;pOrient='가로';active=cH2.filter(function(c){return c.type!=='skip';});}
-      nF=0;nE=0;nN=0;
-      active.forEach(function(c){if(c.type==='full')nF++;else if(c.type==='edge_cut')nE++;else if(c.type==='notch')nN++;});
-      tot=nF+nE+nN;
-      var oa2=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
-      var net2=(w.length*w.height-oa2)/1e6;
-      var gu2=tot*pBW*pBH;
-      var st2=active.reduce(function(s,c){return s+c.solid;},0);
-      var lr2=gu2>0?(gu2-st2)/gu2:0;
+      var cV=placeGrid(w.length,w.height,w.openings||[],BW,BH,off);
+      var cH=placeGrid(w.length,w.height,w.openings||[],BH,BW,off);
+      if(score(cH)<score(cV)){pBW=BH;pBH=BW;pOrient='가로';}
+      var active=(pOrient==='세로'?cV:cH).filter(function(c){return c.type!=='skip';});
+      var nF=0,nE=0,nN=0,nReuse=0;
+      active.forEach(function(c){
+        if(c.type==='full'){
+          nF++;
+        } else if(c.type==='edge_cut'){
+          if(PROJ_POOL.tryUse(c.w,c.h)){ nReuse++; }
+          else { nE++; collectScraps(c,pBW,pBH,PROJ_POOL); }
+        } else if(c.type==='notch'){
+          nN++;
+          PROJ_POOL.add(pBW-c.w,c.h);
+          PROJ_POOL.add(c.w,pBH-c.h);
+        }
+      });
+      var tot=nF+nE+nN;
+      var oa=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
+      var net=(w.length*w.height-oa)/1e6;
+      var gu=tot*pBW*pBH;
+      var st=active.reduce(function(s,c){return s+c.solid;},0);
+      var lr=gu>0?(gu-st)/gu:0;
       PROJ.results.push({wall:w,label:projLabel(w),seq:i+1,cells:active,orient:pOrient,
-        nF:nF,nE:nE,nN:nN,tot:tot,cutCount:nE+nN,lr:lr2,net:net2,
-        gs:Math.ceil(tot*(1+mk)),
-        net:(w.length*w.height-oa)/1e6});
+        nF:nF,nE:nE,nN:nN,nReuse:nReuse,tot:tot,cutCount:nE+nN,lr:lr,net:net,
+        gs:Math.ceil(tot*(1+mk))});
     }
     idx=end;
     document.getElementById('projBar').style.width=Math.round(idx/total*100)+'%';
@@ -1730,9 +1770,10 @@ function showProjResults(mk,BW,BH,PAL){
   var lr=grossArea>0?(grossArea-totNet)/grossArea:0;
   var totCuts=res.reduce(function(s,r){return s+(r.cutCount||0);},0);
   var avgLoss=res.length>0?res.reduce(function(s,r){return s+(r.lr||0);},0)/res.length:0;
+  var totReuse=res.reduce(function(s,r){return s+(r.nReuse||0);},0);
   document.getElementById('psTot').textContent=totNew.toLocaleString()+'장';
   document.getElementById('psSave').textContent=totAll>0?(totNew/totAll).toFixed(2)+'배':'—';
-  document.getElementById('psPool').textContent='—';
+  document.getElementById('psPool').textContent=totReuse.toLocaleString()+'장 재사용 (풀 잔여 '+(PROJ_POOL?PROJ_POOL.size():0)+'개)';
   document.getElementById('psLoss').textContent=(lr*100).toFixed(1)+'%';
   document.getElementById('psPal').textContent=Math.ceil(totNew/PAL)+'팔레트';
   document.getElementById('projStatus').textContent='✅ 완료 — '+PROJ.wallSeq.length+'개 벽';
@@ -1754,6 +1795,7 @@ function showProjResults(mk,BW,BH,PAL){
       +'<span style="min-width:68px;font-weight:600;font-size:11px">'+r.wall.name+'</span>'
       +'<span style="color:var(--t2);font-size:9px;min-width:24px">'+r.wall.storey+'</span>'
       +'<span style="font-size:9px;color:var(--blue);min-width:32px">'+dirBadge+'</span>'
+      +(r.nReuse>0?'<span style="color:var(--green);font-size:9px;margin-right:4px">♻'+r.nReuse+'</span>':'')
       +'<span style="color:var(--t2);font-size:9px;flex:1">온'+r.nF+' 절'+r.cutCount+'회</span>'
       +'<span style="font-family:var(--mono);font-size:9px;color:'+lrColor+'">'+((r.lr||0)*100).toFixed(1)+'%</span>'
       +'<span style="font-family:var(--mono);font-size:9px;margin-left:4px">'+r.gs+'장</span>';
@@ -1780,7 +1822,7 @@ function calcMeasureStats(mat){
   var bw=mat==='ply'?1220:900;
   var bh=mat==='ply'?2440:1800;
   var mk=+document.getElementById('markup').value/100;
-  var palQty=990; // 석고보드·합판 모두 990매/팔레트
+  var palQty=mat==='ply'?100:990; // 석고보드 990매, 합판 100매/팔레트
   var boardArea=bw*bh;
   var sumGrossArea=0, sumNetArea=0;
   var nF=0, nE=0, nN=0;
@@ -2110,9 +2152,10 @@ function computeSummary(){
   var PAL=G.mat==='ply'?100:990;
   var off=G.ply===2?Math.min(STUD,Math.floor(BW/2)):0;
 
-  var sWalls=0,sTot=0,sFull=0,sCut=0,sCuts=0,sGs=0,sRemnants=0;
+  var sWalls=0,sTot=0,sFull=0,sCut=0,sCuts=0,sGs=0,sRemnants=0,sReuse=0;
   var sGuTotal=0,sStTotal=0,sGrossArea=0,sNetArea=0;
   var sVert=0,sHoriz=0,sMixed=0;
+  var sumPool=new ReusePool();
 
   var validWalls=IFC.filter(function(w){
     return true; // IFC 데이터는 이미 전처리 완료 (파라펫·소형 제거)
@@ -2135,11 +2178,18 @@ function computeSummary(){
     else{cells=cH;bw=BH;bh=BW;dir='가로';}
 
     var active=cells.filter(function(c){return c.type!=='skip';});
-    var nF=0,nE=0,nN=0;
+    var nF=0,nE=0,nN=0,nR=0;
     active.forEach(function(c){
-      if(c.type==='full') nF++;
-      else if(c.type==='edge_cut') nE++;
-      else if(c.type==='notch') nN++;
+      if(c.type==='full'){
+        nF++;
+      } else if(c.type==='edge_cut'){
+        if(sumPool.tryUse(c.w,c.h)){ nR++; }
+        else { nE++; collectScraps(c,bw,bh,sumPool); }
+      } else if(c.type==='notch'){
+        nN++;
+        sumPool.add(bw-c.w,c.h);
+        sumPool.add(c.w,bh-c.h);
+      }
     });
     var tot=nF+nE+nN;
     var gu=tot*bw*bh;
@@ -2147,7 +2197,7 @@ function computeSummary(){
     var gs=Math.ceil(tot*(1+mk));
 
     sWalls++;
-    sTot+=tot; sFull+=nF; sCut+=nE+nN; sCuts+=nE+nN;
+    sTot+=tot; sFull+=nF; sCut+=nE+nN; sCuts+=nE+nN; sReuse+=nR;
     sGuTotal+=gu; sStTotal+=st; sGs+=gs;
     sRemnants+=nE+nN; // 절단된 조각 수
     if(dir==='세로') sVert++; else sHoriz++;
@@ -2163,7 +2213,7 @@ function computeSummary(){
   document.getElementById('sum-tot').textContent     = sTot.toLocaleString();
   document.getElementById('sum-full').textContent    = sFull.toLocaleString();
   document.getElementById('sum-cut').textContent     = sCut.toLocaleString();
-  document.getElementById('sum-reuse').textContent   = '0';
+  document.getElementById('sum-reuse').textContent   = sReuse.toLocaleString();
   document.getElementById('sum-order').textContent   = (pal-1)+' 팔레트 + '+palRem+'장';
   document.getElementById('sum-cuts').textContent    = sCuts.toLocaleString();
   document.getElementById('sum-dir').textContent     = sVert+' / '+sHoriz+' / '+sMixed;
@@ -2200,7 +2250,7 @@ function __eval_json_setting(){
     ply: (window.G && G.ply) ? G.ply : null,
     method: (window.G && G.method) ? G.method : null,
     markupRate_percent: markupEl ? __eval_json_num(markupEl.value) : 0,
-    palletUnitSheets: mat === 'ply' ? 50 : 990
+    palletUnitSheets: mat === 'ply' ? 100 : 990
   };
 }
 function __eval_json_row(r, wall, idx){
