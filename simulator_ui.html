@@ -50,7 +50,6 @@ select:focus,input:focus{border-color:var(--blue)}
 .wi:hover{border-color:var(--t2)}
 .wi.on{border-color:var(--blue);background:rgba(58,142,255,.1)}
 .wi-name{font-weight:600;font-size:11px;display:flex;align-items:center;gap:4px}
-.wi-op{color:var(--amber);font-size:9px}
 .wi-dim{color:var(--t2);font-family:var(--mono);margin-top:1px;font-size:9px}
 
 /* 층 바 */
@@ -672,10 +671,9 @@ function filterWalls(){
   list.slice(0,120).forEach(function(w){
     var div = document.createElement('div');
     div.className = 'wi' + (G.wall&&G.wall.wall_id===w.wall_id?' on':'');
-    var hasOp = w.openings.length>0;
-    div.innerHTML = '<div class="wi-name">'+w.name+(hasOp?'<span class="wi-op">●</span>':'')+'</div>'
+    div.innerHTML = '<div class="wi-name">'+w.name+'</div>'
       +'<div class="wi-dim">'+w.storey+(w.space?' | '+w.space:'')+'</div>'
-      +'<div class="wi-dim">'+w.length.toLocaleString()+'×'+w.height.toLocaleString()+'mm'+(hasOp?' | 개구부'+w.openings.length:'')+'</div>';
+      +'<div class="wi-dim">'+w.length.toLocaleString()+'×'+w.height.toLocaleString()+'mm'+(w.openings.length?' | 개구부'+w.openings.length:'')+'</div>';
     div.addEventListener('click', (function(wall){ return function(){ selectWall(wall); }; })(w));
     el.appendChild(div);
   });
