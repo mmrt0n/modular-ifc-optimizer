@@ -1361,7 +1361,7 @@ def make_simulator_html(sim_walls: list, ifc_name: str,
                 continue
             ops_center = sw.get('openings', [])  # center-x (승훈 JS 규격)
             ops_left = [
-                {'ox': o['x'] - o['width'] // 2, 'ow': o['width'],
+                {'ox': o['x'] - o['width'] / 2, 'ow': o['width'],
                  'oy': o['y'], 'oh': o['height']}
                 for o in ops_center
             ]

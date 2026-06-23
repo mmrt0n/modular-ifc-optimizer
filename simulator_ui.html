@@ -921,7 +921,7 @@ function run(){
   var os=document.getElementById('orient').value;
   // ━━ 자재별 표준 규격 ━━
   var BW, BH, PALLET;
-  if(G.mat==='ply'){ BW=1220; BH=2440; PALLET=990; }
+  if(G.mat==='ply'){ BW=1220; BH=2440; PALLET=100; }
   else { BW=900; BH=1800; PALLET=990; }
 
   // ━━ 공법/겹수별 오프셋 ━━
@@ -1661,7 +1661,7 @@ ReusePool.prototype.tryUse=function(needW,needH){
     var p=this.pieces[i];
     if(p.w>=needW&&p.h>=needH){
       this.pieces.splice(i,1);this.totalUsed++;
-      this.add(p.w-needW,needH);
+      this.add(p.w-needW,p.h);
       this.add(p.w,p.h-needH);
       return true;
     }
