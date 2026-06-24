@@ -211,7 +211,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:2px 0}
       <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px">
         <thead><tr style="background:#141C2A;border-bottom:2px solid #1C2A3E">
           <th style="padding:9px 10px;text-align:left;color:#5A7A9A;width:26%">항목</th>
-          <th style="padding:9px 10px;text-align:center;color:#888">기본 방식<br><span style="font-size:9px;font-weight:400">전체면적 ÷ 보드면적</span></th>
+          <th style="padding:9px 10px;text-align:center;color:#888">기본 방식<br><span style="font-size:9px;font-weight:400">벽별 행×열 올림 계산</span></th>
           <th style="padding:9px 10px;text-align:center;color:#3A8EFF">우리 시스템<br><span style="font-size:9px;font-weight:400">실제 그리드 1장씩 계산</span></th>
         </tr></thead>
         <tbody id="m-gyp-body"><tr><td colspan="3" style="text-align:center;padding:20px;color:#5A7A9A">⏳ 버튼 클릭 시 641개 벽 실시간 계산</td></tr></tbody>
@@ -221,14 +221,14 @@ hr{border:none;border-top:1px solid var(--bd);margin:2px 0}
       <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px">
         <thead><tr style="background:#141C2A;border-bottom:2px solid #1C2A3E">
           <th style="padding:9px 10px;text-align:left;color:#5A7A9A;width:26%">항목</th>
-          <th style="padding:9px 10px;text-align:center;color:#888">기본 방식<br><span style="font-size:9px;font-weight:400">전체면적 ÷ 보드면적</span></th>
+          <th style="padding:9px 10px;text-align:center;color:#888">기본 방식<br><span style="font-size:9px;font-weight:400">벽별 행×열 올림 계산</span></th>
           <th style="padding:9px 10px;text-align:center;color:#3A8EFF">우리 시스템<br><span style="font-size:9px;font-weight:400">실제 그리드 1장씩 계산</span></th>
         </tr></thead>
         <tbody id="m-ply-body"><tr><td colspan="3" style="text-align:center;padding:20px;color:#5A7A9A">⏳ 버튼 클릭 시 641개 벽 실시간 계산</td></tr></tbody>
       </table>
     </div>
     <div style="background:#141C2A;border-radius:6px;padding:10px;font-size:10px;color:#5A7A9A;line-height:1.7">
-      ※ 우리 시스템 로스율이 높은 이유: 641개 벽 중 높이 1800mm 배수 = 0개 → 모든 벽 마지막 행 전부 직선절단.<br>기본 방식은 단순 나눗셈으로 이를 무시해 <span style="color:#F04848">과소 추산</span>. 우리 시스템은 <span style="color:#3A8EFF">실제 절단 수 정확 반영</span>.
+      ※ 기본 방식: 벽마다 ceil(길이/보드폭) × ceil(높이/보드높이)로 행·열 올림 계산. 개구부 미반영.<br>우리 시스템: 개구부 위치·크기 반영, RTL 실제 배치 1장씩 계산 → <span style="color:#3A8EFF">실제 절단 수 정확 반영</span>.
     </div>
   </div>
 </div>
@@ -703,7 +703,7 @@ function setMat(m){
   document.getElementById('mat-gyp').classList.toggle('on',m==='gyp');
   document.getElementById('mat-ply').classList.toggle('on',m==='ply');
   // 자재별 보드 규격: 석고보드=900×1800, 합판=1220×2440
-  var info=m==='gyp'?'석고보드 900×1800mm · 파레트 990매':'합판 1220×2440mm · 파레트 기준 확인 필요';
+  var info=m==='gyp'?'석고보드 900×1800mm · 파레트 990매':'합판 1220×2440mm · 파레트 100매';
   document.getElementById('plyNote').textContent=info;
 }
 
@@ -1824,6 +1824,7 @@ function calcMeasureStats(mat){
   var boardArea=bw*bh;
   var sumGrossArea=0, sumNetArea=0;
   var nF=0, nE=0, nN=0;
+  var legA=0; // 기본방식: 벽마다 ceil(길이/bw)×ceil(높이/bh)
   IFC.forEach(function(w){
     if(!w||w.length<300||w.height<300) return;
     if(EXCLUDED_STOREYS[w.storey]) return; // GL/RF 제외
@@ -1831,13 +1832,13 @@ function calcMeasureStats(mat){
     var opA=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
     sumGrossArea+=gA;
     sumNetArea+=Math.max(0,gA-opA);
+    legA+=Math.ceil(w.length/bw)*Math.ceil(w.height/bh);
     placeGrid(w.length,w.height,w.openings||[],bw,bh,0).forEach(function(c){
       if(c.type==='full') nF++;
       else if(c.type==='edge_cut') nE++;
       else if(c.type==='notch') nN++;
     });
   });
-  var legA=Math.ceil(sumGrossArea/boardArea);
   var legB=Math.ceil(sumNetArea/boardArea);
   var our=nF+nE+nN;
   var legAgs=Math.ceil(legA*(1+mk));
@@ -1868,7 +1869,7 @@ function buildMeasureRows(d){
     ['발주 — 할증 8%', f(base*1.08)+'장', f(tot*1.08)+'장'],
     ['전체 로스율', d.legA.loss+'%', '<span style="color:#ECBA30">'+d.our.loss+'%</span>'],
     ['개구부 반영', '<span style="color:#F04848">❌ 미반영</span>', '<span style="color:#26BE78">✅ 위치·크기</span>'],
-    ['파레트 수 (990매 기준)', d.legA.pal+'팔레트', d.our.pal+'팔레트']
+    ['파레트 수 ('+d.palQty+'매 기준)', d.legA.pal+'팔레트', d.our.pal+'팔레트']
   ];
   return rows.map(function(r,i){
     var bg=i%2?'background:#0A1018;':'';
