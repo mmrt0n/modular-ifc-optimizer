@@ -1282,6 +1282,15 @@ def extract_by_regex(ifc_path):
             with open(ifc_path, 'r', encoding='latin-1') as _f:
                 content = _f.read()
 
+        # \X2\...\X0\ 인코딩 디코딩 (IFC STEP 한글 등 비ASCII 처리)
+        def _decode_x2(text):
+            def _replace(m):
+                hex_str = m.group(1)
+                chars = [chr(int(hex_str[i:i+4], 16)) for i in range(0, len(hex_str), 4)]
+                return ''.join(chars)
+            return re.sub(r'\\X2\\([0-9A-Fa-f]+)\\X0\\', _replace, text)
+        content = _decode_x2(content)
+
         # 수량 카운트
         for key, pat in _RE_ENTITY_CNT.items():
             result[key] = len(pat.findall(content))
