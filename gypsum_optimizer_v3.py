@@ -148,37 +148,38 @@ def _columns_rtl(x_start: float, length: float,
     return cols
 
 
-# ─────────────────────────────────────────
-# [변경3] 개구부 중심 대칭 배치
-# ─────────────────────────────────────────
-def _seam_positions_center_sym(x_start: float, x_end: float,
-                                cx: float, layer_offset: int = 0) -> list:
-    """
-    [M3변경] 개구부 중심(cx) 대칭 이음매 배치.
-    cx를 기준으로 BW씩 좌우로 이음매를 배치.
-    → 개구부 양쪽에 동일 너비 자투리가 대칭으로 위치.
-    """
-    seams = set()
-    seams.add(x_start)
-    seams.add(x_end)
-
-    # layer_offset 적용된 기준점(ref)에서 좌우로 BW 간격 이음매 배치.
-    # ref 자체가 개구부 중심 기준이므로 보드가 중심 대칭으로 정렬됨.
-    ref = cx + layer_offset
-
-    x = ref
-    while x <= x_end:
+def _columns_ltr(x_start: float, length: float,
+                 layer_offset: int = 0) -> list:
+    """시작부터 배치한 열 목록 (자투리가 오른쪽 끝에 위치).
+    개구부 오른쪽 구역에서 사용 → 자투리가 개구부 옆이 아닌 벽 오른쪽 끝으로 감."""
+    if length <= 0:
+        return []
+    x_end = x_start + length
+    seams = {round(x_start, 1), round(x_end, 1)}
+    x = round(x_start + layer_offset, 1)
+    while x < x_end:
         if x_start < x < x_end:
             seams.add(round(x, 1))
         x = round(x + BW, 1)
+    seams = sorted(seams)
+    cols = []
+    for i in range(len(seams) - 1):
+        cx = seams[i]
+        cw = round(seams[i + 1] - seams[i], 1)
+        if cw < 0.5:
+            continue
+        t = 'full' if abs(cw - BW) < 0.5 else 'cut'
+        cols.append((t, cx, cw))
+    return cols
 
-    x = round(ref - BW, 1)
-    while x >= x_start:
-        if x_start < x < x_end:
-            seams.add(round(x, 1))
-        x = round(x - BW, 1)
 
-    return sorted(seams)
+def _split_span(x_start: float, w: float) -> list:
+    """구간 [x_start, x_start+w]를 표준폭(BW) 열로 분할.
+    개구부 위·아래 보드가 BW보다 넓은 단일판이 되지 않도록. 반환: [(x, w), ...]"""
+    if w <= BW + 0.5:
+        return [(round(x_start, 1), round(w, 1))]
+    cols = _fix_thin_edge_columns(_columns_ltr(x_start, w, 0))
+    return [(cx, cw) for t, cx, cw in cols if t != 'opening']
 
 
 # ─────────────────────────────────────────
@@ -230,10 +231,10 @@ def build_column_plan(L: float, ow: float, ox: float,
                       is_external: bool, layer: int = 1):
     """
     x방향 열 계획.
-    [M3변경] 끝부터 배치(RTL) + 개구부 중심 대칭(SYM) 비교해서 손실 낮은 것 선택.
+    개구부에 닿는 칸은 항상 온장, 작은 자투리는 벽 양 끝으로 보냄
+    (왼쪽 구역 RTL + 오른쪽 구역 LTR). 끝칸 <300mm는 슬리버 보정.
 
-    반환: (columns, case_name)
-    case_name: 'RTL'(끝부터) / 'SYM'(개구부중심대칭)
+    반환: (columns, 'RTL')
     """
     offset = STUD if (IS_2P and layer == 2) else 0
     opening_end = ox + ow
@@ -242,74 +243,18 @@ def build_column_plan(L: float, ow: float, ox: float,
         cols = _fix_thin_edge_columns(_columns_rtl(0, L, offset))
         return cols, 'RTL'
 
-    # ── Case RTL: 벽 전체 폭으로 그리드 생성 후 개구부 구간 마스킹 ──────────────────────
-    # (분리 RTL은 개구부 오른쪽 자투리가 개구부 옆에 붙는 문제 발생)
-    seams_rtl = _seam_positions_rtl(0, L, offset)
-    cols_rtl = []
-    for i in range(len(seams_rtl) - 1):
-        x = seams_rtl[i]
-        w = round(seams_rtl[i + 1] - seams_rtl[i], 1)
-        if w < 0.5:
-            continue
-        if x >= ox and x + w <= opening_end:
-            cols_rtl.append(('opening', x, w))
-        elif x < ox and x + w > ox:
-            left_w = round(ox - x, 1)
-            if left_w > 0.5:
-                t = 'full' if abs(left_w - BW) < 0.5 else 'cut'
-                cols_rtl.append((t, x, left_w))
-            cols_rtl.append(('opening', ox, min(ow, w - left_w)))
-        elif x < opening_end and x + w > opening_end:
-            cols_rtl.append(('opening', x, round(opening_end - x, 1)))
-            right_x = opening_end
-            right_w = round(x + w - opening_end, 1)
-            if right_w > 0.5:
-                t = 'full' if abs(right_w - BW) < 0.5 else 'cut'
-                cols_rtl.append((t, right_x, right_w))
-        else:
-            t = 'full' if abs(w - BW) < 0.5 else 'cut'
-            cols_rtl.append((t, x, w))
+    # ── Case RTL: 개구부 양옆 구역의 자투리를 각각 바깥 벽끝으로 ──────────────────────
+    # 왼쪽 구역[0,ox]: 개구부에서 왼쪽으로 온장 배치 → 자투리가 왼쪽 벽끝(x=0)
+    # 오른쪽 구역[opening_end,L]: 개구부에서 오른쪽으로 온장 배치 → 자투리가 오른쪽 벽끝(x=L)
+    # → 개구부에 닿는 칸은 항상 온장, 작은 조각은 벽 가장자리에만 위치.
+    cols_rtl = (
+        _columns_rtl(0, ox, offset) +
+        [('opening', ox, ow)] +
+        _columns_ltr(opening_end, L - opening_end, offset)
+    )
 
-    # ── Case SYM: 개구부 중심 대칭 ─────────────────
-    cx = ox + ow / 2
-    seams_full = _seam_positions_center_sym(0, L, cx, offset)
-    cols_sym_raw = []
-    for i in range(len(seams_full) - 1):
-        x = seams_full[i]
-        w = round(seams_full[i + 1] - seams_full[i], 1)
-        if w < 0.5:
-            continue
-        # 개구부 구간 처리
-        if x >= ox and x + w <= opening_end:
-            cols_sym_raw.append(('opening', x, w))
-        elif x < ox and x + w > ox:
-            # 개구부 왼쪽 걸쳐진 경우 분리
-            left_w = round(ox - x, 1)
-            if left_w > 0.5:
-                t = 'full' if abs(left_w - BW) < 0.5 else 'cut'
-                cols_sym_raw.append((t, x, left_w))
-            cols_sym_raw.append(('opening', ox, min(ow, w - left_w)))
-        elif x < opening_end and x + w > opening_end:
-            # 개구부 오른쪽 걸쳐진 경우 분리
-            cols_sym_raw.append(('opening', x, round(opening_end - x, 1)))
-            right_x = opening_end
-            right_w = round(x + w - opening_end, 1)
-            if right_w > 0.5:
-                t = 'full' if abs(right_w - BW) < 0.5 else 'cut'
-                cols_sym_raw.append((t, right_x, right_w))
-        else:
-            t = 'full' if abs(w - BW) < 0.5 else 'cut'
-            cols_sym_raw.append((t, x, w))
-    cols_sym = cols_sym_raw
-
+    # 자투리는 항상 벽 가장자리로 (개구부 옆에는 온장만) — 사용자 시공기준.
     cols_rtl = _fix_thin_edge_columns(cols_rtl)
-    cols_sym = _fix_thin_edge_columns(cols_sym)
-
-    loss_rtl = _col_waste_rate(cols_rtl)
-    loss_sym = _col_waste_rate(cols_sym)
-
-    if loss_sym < loss_rtl - 1e-6:
-        return cols_sym, 'SYM'
     return cols_rtl, 'RTL'
 
 
@@ -580,31 +525,35 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
                         op_oh_actual = op_oh_m
                         break
                 op_top = op_oy_actual + op_oh_actual
+                # 개구부 폭이 BW보다 넓으면 위/아래 보드도 표준폭으로 분할
+                sub_cols = _split_span(col_x, col_w)
 
                 # 개구부 아래 보드 (예: 창문 아래 벽) — 'cut_op' 타입으로 별도 색상
                 if op_oy_actual > 0.5:
-                    for row_t, row_y, row_h in _rows_in_region(0, op_oy_actual):
-                        p = _process_cell(col_w, col_x, row_h, row_y,
-                                          'cut', row_t, layer,
-                                          space_id, floor_id, pool, stat)
-                        if p:
-                            p['type'] = 'cut_op'
-                            placements.append(p)
+                    for sx, sw in sub_cols:
+                        for row_t, row_y, row_h in _rows_in_region(0, op_oy_actual):
+                            p = _process_cell(sw, sx, row_h, row_y,
+                                              'cut', row_t, layer,
+                                              space_id, floor_id, pool, stat)
+                            if p:
+                                p['type'] = 'cut_op'
+                                placements.append(p)
 
-                # 개구부 마커 (실제 치수)
+                # 개구부 마커 (실제 치수 — 전체 폭 하나로 표시)
                 placements.append({'layer': layer, 'x': col_x, 'y': op_oy_actual,
                                    'w': col_w, 'h': op_oh_actual, 'type': 'opening'})
 
                 # 개구부 위 보드 (예: 문 위 벽) — 'cut_op' 타입으로 별도 색상
                 above_h = H - op_top
                 if above_h > 0.5:
-                    for row_t, row_y, row_h in _rows_in_region(op_top, above_h):
-                        p = _process_cell(col_w, col_x, row_h, row_y,
-                                          'cut', row_t, layer,
-                                          space_id, floor_id, pool, stat)
-                        if p:
-                            p['type'] = 'cut_op'
-                            placements.append(p)
+                    for sx, sw in sub_cols:
+                        for row_t, row_y, row_h in _rows_in_region(op_top, above_h):
+                            p = _process_cell(sw, sx, row_h, row_y,
+                                              'cut', row_t, layer,
+                                              space_id, floor_id, pool, stat)
+                            if p:
+                                p['type'] = 'cut_op'
+                                placements.append(p)
                 continue
 
             active_oh = active_oy = 0
