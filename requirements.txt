@@ -1,0 +1,4 @@
+﻿ifcopenshell
+matplotlib
+numpy
+python-docx

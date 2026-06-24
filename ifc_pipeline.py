@@ -509,11 +509,12 @@ def main():
 
         # ── STEP 10: 브라우저 오픈 ────────────────────
         prog.step(9, "브라우저에서 결과를 확인하세요...")
-        webbrowser.open(verify_html)
+        # new=2: 각 파일을 새 탭으로 열어 file:// cross-origin 경고 방지
+        webbrowser.open(verify_html, new=2)
         if sim_html:
-            webbrowser.open(sim_html)
+            webbrowser.open(sim_html, new=2)
         else:
-            webbrowser.open(opt_html)
+            webbrowser.open(opt_html, new=2)
         prog.done()
 
     except Exception as e:

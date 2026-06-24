@@ -1440,29 +1440,20 @@ def dual_verify(ifc_data, regex_data):
     ]:
         ifs_st  = _ifs_dim_stats(walls, dim_key)
         re_st   = regex_data.get(re_dim_key, {})
-        # 평균값 비교 (±10% 허용)
-        ifs_avg = ifs_st.get('avg') or 0
-        re_avg  = re_st.get('avg') or 0
-        if ifs_avg > 0 and re_avg > 0:
-            diff_pct = abs(ifs_avg - re_avg) / ifs_avg * 100
-            match    = diff_pct <= 10
-            note = (f"평균 일치 (±{round(diff_pct,1)}%)" if match
-                    else f"평균 차이 {round(diff_pct,1)}% — 단위 혼용 가능성")
-        elif ifs_avg == 0 and re_avg == 0:
-            match = True; note = '치수 데이터 없음'
-        else:
-            match = False
-            note = f'ifs avg={ifs_avg}mm / regex avg={re_avg}mm — 추출 실패 가능성'
-
+        # 정규식은 파일 전체 요소(슬래브·기둥·보 등 포함)에서 추출 →
+        # IfcWall만 대상인 ifcopenshell 값과 모집단이 달라 평균 비교 무의미.
+        # 오탐 방지: match=True(참고용)로 고정, 수치만 표시.
         ifs_disp = (f"avg {ifs_st['avg']}mm ({ifs_st['count']}개)"
                     if ifs_st['count'] else '-')
         re_disp  = (f"avg {re_st['avg']}mm ({re_st['count']}개)"
                     if re_st.get('count') else '-')
+        note = (f"참고용 — IfcWall 기준({ifs_st.get('count',0)}개) vs "
+                f"전체 IFC 요소({re_st.get('count',0)}개) 비교는 모집단 상이")
         rows.append({
             'field': label,
             'ifs':   ifs_disp,
             'regex': re_disp,
-            'match': match,
+            'match': True,
             'note':  note,
             'missing_in_regex': [],
             'missing_in_ifs': [],

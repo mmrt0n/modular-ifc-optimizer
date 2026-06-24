@@ -227,35 +227,49 @@ def _fix_thin_edge_columns(cols, min_col=300):
 # ─────────────────────────────────────────
 # x축 열 계획 (통합)
 # ─────────────────────────────────────────
-def build_column_plan(L: float, ow: float, ox: float,
+def build_column_plan(L: float, ops_xw: list,
                       is_external: bool, layer: int = 1):
     """
-    x방향 열 계획.
-    개구부에 닿는 칸은 항상 온장, 작은 자투리는 벽 양 끝으로 보냄
-    (왼쪽 구역 RTL + 오른쪽 구역 LTR). 끝칸 <300mm는 슬리버 보정.
+    x방향 열 계획. 다중 개구부 지원.
 
-    반환: (columns, 'RTL')
+    ops_xw: [(ox, ow), ...] — 개구부 x시작·폭 목록 (0개 이상)
+    배치 규칙:
+      · 왼쪽 끝 구역 : RTL → 자투리가 왼쪽 벽 가장자리
+      · 개구부 사이 구역: LTR → 자투리가 다음 개구부 쪽, 온장이 이전 개구부 오른쪽에 밀착
+      · 오른쪽 끝 구역: LTR → 자투리가 오른쪽 벽 가장자리
+    결과: 자투리가 양쪽 벽 가장자리에 위치, 개구부 사이 구역은 온장이 이전 개구부에 밀착
+
+    반환: (columns, 'RTLC')
     """
     offset = STUD if (IS_2P and layer == 2) else 0
-    opening_end = ox + ow
 
-    if ow == 0:
+    if not ops_xw:
         cols = _fix_thin_edge_columns(_columns_rtl(0, L, offset))
         return cols, 'RTL'
 
-    # ── Case RTL: 개구부 양옆 구역의 자투리를 각각 바깥 벽끝으로 ──────────────────────
-    # 왼쪽 구역[0,ox]: 개구부에서 왼쪽으로 온장 배치 → 자투리가 왼쪽 벽끝(x=0)
-    # 오른쪽 구역[opening_end,L]: 개구부에서 오른쪽으로 온장 배치 → 자투리가 오른쪽 벽끝(x=L)
-    # → 개구부에 닿는 칸은 항상 온장, 작은 조각은 벽 가장자리에만 위치.
-    cols_rtl = (
-        _columns_rtl(0, ox, offset) +
-        [('opening', ox, ow)] +
-        _columns_ltr(opening_end, L - opening_end, offset)
-    )
+    ops = sorted(ops_xw, key=lambda o: o[0])
+    cols = []
+    prev_end = 0.0
 
-    # 자투리는 항상 벽 가장자리로 (개구부 옆에는 온장만) — 사용자 시공기준.
-    cols_rtl = _fix_thin_edge_columns(cols_rtl)
-    return cols_rtl, 'RTL'
+    for i, (ox, ow) in enumerate(ops):
+        zone_w = ox - prev_end
+        if zone_w > 0.5:
+            if i == 0:
+                # 왼쪽 끝 구역: RTL → 자투리가 왼쪽 벽 가장자리
+                cols += _columns_rtl(prev_end, zone_w, offset)
+            else:
+                # 개구부 사이 구역: LTR → 온장이 이전 개구부 오른쪽에 밀착, 자투리는 다음 개구부 쪽
+                cols += _columns_ltr(prev_end, zone_w, offset)
+        cols.append(('opening', round(ox, 1), round(ow, 1)))
+        prev_end = ox + ow
+
+    right_w = L - prev_end
+    if right_w > 0.5:
+        # 오른쪽 끝 구역: LTR → 자투리가 오른쪽 벽 가장자리
+        cols += _columns_ltr(prev_end, right_w, offset)
+
+    cols = _fix_thin_edge_columns(cols)
+    return cols, 'RTLC'
 
 
 def _col_waste_rate(cols: list) -> float:
@@ -479,9 +493,7 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
         ox = wall.get('ox', 0); oy = wall.get('oy', 0)
         merged_ops = [(ox, ow, oh, oy)] if (ow and oh) else []
 
-    rep_ox = rep_ow = rep_oh = rep_oy = 0
-    if merged_ops:
-        rep_ox, rep_ow, rep_oh, rep_oy = max(merged_ops, key=lambda t: t[1]*t[2])
+    ops_xw = [(ox, ow) for ox, ow, oh, oy in merged_ops]
 
     # 최적 y_case 추정
     best_y = 'C'; best_est = float('inf'); best_xc = 'RTL'
@@ -489,7 +501,7 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
         waste = board_area = 0.0
         xc_used = 'RTL'
         for layer in layers:
-            cols, xc = build_column_plan(L, rep_ow, rep_ox, is_ext, layer)
+            cols, xc = build_column_plan(L, ops_xw, is_ext, layer)
             xc_used = xc
             for col_t, col_x, col_w in cols:
                 if col_t == 'opening': continue
@@ -514,7 +526,7 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
     placements = []
     x_case_used = best_xc
     for layer in layers:
-        cols, _ = build_column_plan(L, rep_ow, rep_ox, is_ext, layer)
+        cols, _ = build_column_plan(L, ops_xw, is_ext, layer)
         for col_t, col_x, col_w in cols:
             if col_t == 'opening':
                 # 실제 개구부 y·h 찾기 (전체 높이 대신 실제 문/창 치수 사용)
@@ -1048,7 +1060,7 @@ def make_opt_html(results: list, total_loss: float,
   .cut-freq td{{padding:5px 10px;border-bottom:1px solid #f0f0f0}}
   .cut-freq td.num{{text-align:right;font-weight:700;color:#1565c0}}
   .floor-section{{margin:0 40px 28px;background:#fff;border-radius:12px;
-                   box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden}}
+                   box-shadow:0 2px 8px rgba(0,0,0,.06)}}
   .floor-section h2{{margin:0;padding:14px 22px;
                       background:linear-gradient(90deg,#e8eaf6 0%,#f3e5f5 100%);
                       font-size:15px;color:#283593;
@@ -1201,322 +1213,425 @@ if __name__ == '__main__':
 
 
 # ═══════════════════════════════════════════════════════════
-# 승훈 시뮬레이터 UI HTML 생성
+# 시뮬레이터 HTML 생성 (v4 — 자체완결형, 4조합 라이브 전환)
+#   · 템플릿(simulator_ui.html) 불필요 — 모든 코드/데이터를 직접 생성
+#   · f-string 중괄호 escaping 회피: 일반 문자열 + 토큰 치환 방식
 # ═══════════════════════════════════════════════════════════
 
-def _placements_to_js_cells(placements: list, ops_left: list) -> list:
-    """
-    Python optimizer placements (단일 레이어) → 승훈 JS cells[] 형식.
-    ops_left: [{'ox':..,'ow':..,'oy':..,'oh':..}]  (왼쪽 끝 기준 mm)
-    type 변환: full→full, reuse→reuse, cut/cut_op → notch(개구부 겹침) or edge_cut
-    """
-    cells = []
-    code_idx = 0
-    sorted_pl = sorted(
-        [p for p in placements if p.get('type') != 'opening'],
-        key=lambda p: (p.get('y', 0), p.get('x', 0))
-    )
-    for p in sorted_pl:
-        pt = p.get('type', 'cut')
-        x, y, w, h = p['x'], p['y'], p['w'], p['h']
-        if pt == 'full':
-            js_type = 'full'
-        elif pt == 'reuse':
-            js_type = 'reuse'
-        else:  # cut / cut_op
-            def _ov(op, _x=x, _y=y, _w=w, _h=h):
-                return (_x < op['ox'] + op['ow'] and _x + _w > op['ox'] and
-                        _y < op['oy'] + op['oh'] and _y + _h > op['oy'])
-            js_type = 'notch' if any(_ov(op) for op in ops_left) else 'edge_cut'
-        code_idx += 1
-        cells.append({
-            'x': round(x), 'y': round(y), 'w': round(w), 'h': round(h),
-            'pos': round(w * h), 'solid': round(w * h),
-            'type': js_type, 'idx': code_idx,
-            'code': 'GYP-' + str(code_idx).zfill(3),
-            'row': 0, 'col': 0, 'totalRows': 1,
-            'deadTop': False, 'deadBot': False, 'deadLeft': False,
-            'isSliver': (w < 100 or h < 100),
-        })
-    return cells
-
-
-def _build_precomputed(opt_results: list, sim_map: dict,
-                       bw: int, bh: int) -> dict:
-    """optimize_building 결과 → {wall_id: pc} (시뮬레이터 주입용). bw/bh 명시."""
-    precomputed = {}
-    for r in opt_results:
-        wid = r['wall_id']
-        sw = sim_map.get(wid)
-        if sw is None:
-            continue
-        ops_center = sw.get('openings', [])
-        ops_left = [
-            {'ox': o['x'] - o['width'] / 2, 'ow': o['width'],
-             'oy': o['y'], 'oh': o['height']}
-            for o in ops_center
-        ]
-        cells_L1 = _placements_to_js_cells(
-            [p for p in r.get('placements', []) if p.get('layer', 1) == 1],
-            ops_left)
-        cells_L2 = _placements_to_js_cells(
-            [p for p in r.get('placements', []) if p.get('layer', 1) == 2],
-            ops_left)
-        nF = sum(1 for c in cells_L1 if c['type'] == 'full')
-        nE = sum(1 for c in cells_L1 if c['type'] == 'edge_cut')
-        nN = sum(1 for c in cells_L1 if c['type'] == 'notch')
-        nR = r.get('reuse_in', 0)
-        tot = r.get('boards', max(1, nF + nE + nN))
-        precomputed[wid] = {
-            'cells_L1': cells_L1,
-            'cells_L2': cells_L2 if cells_L2 else None,
-            'ops': ops_center,
-            'nF': nF, 'nE': nE, 'nN': nN, 'nR': nR,
-            'tot': tot,
-            'lr': round(r.get('loss_pct', 0) / 100, 6),
-            'bw': bw, 'bh': bh,
-            'gs': round(tot * 1.07),
-            'net': round(r['L'] * r['H'] / 1e6, 4),
-            'orient': r.get('layout', 'RTL'),
-        }
-    return precomputed
-
-
-# 설정키 → (bw, bh)
 _CONFIG_DIMS = {'gyp1': (900, 1800), 'gyp2': (900, 1800),
                 'ply1': (1220, 2440), 'ply2': (1220, 2440)}
 
-
-def _sim_js_patch(pc_json: str) -> str:
-    """PRECOMPUTED 주입 + run()/drawAll() 오버라이드 스크립트."""
-    return (
-        '<script>\n'
-        'var PRECOMPUTED=' + pc_json + ';\n'
-        '(function(){\n'
-        '  if(!window.PRECOMPUTED) return;\n'
-        '  var _oRun=window.run;\n'
-        '  window.run=function(){\n'
-        '    if(!G.wall){alert("벽을 선택하세요");return;}\n'
-        '    var wid=G.wall.wall_id;\n'
-        '    var pc=PRECOMPUTED[wid];\n'
-        '    if(!pc){return _oRun.call(this);}\n'
-        '    window._cornerWarnCount=0;\n'
-        '    var mk=+document.getElementById("markup").value/100;\n'
-        '    G.cells=pc.cells_L1;\n'
-        '    if(G.ply===2){G._L1=pc.cells_L1;G._L2=pc.cells_L2||pc.cells_L1;}\n'
-        '    else{G._L1=null;G._L2=null;}\n'
-        '    var nR=pc.nR||0;\n'
-        '    var gs=Math.ceil(pc.tot*(1+mk));\n'
-        '    G.result={W:G.wall.length,H:G.wall.height,\n'
-        '      bw:pc.bw||900,bh:pc.bh||1800,orient:pc.orient||"RTL",\n'
-        '      ops:pc.ops||[],nF:pc.nF,nE:pc.nE,nN:pc.nN,nR:nR,\n'
-        '      tot:pc.tot,cutCount:pc.nE+pc.nN,lr:pc.lr,\n'
-        '      notchRatio:pc.tot>0?pc.nN/pc.tot:0,net:pc.net,gs:gs,mk:mk};\n'
-        '    document.getElementById("sc2").textContent=pc.nF+"장";\n'
-        '    document.getElementById("sc3").textContent=pc.nE+"장";\n'
-        '    document.getElementById("sc4").textContent=pc.nN+"장";\n'
-        '    var sc5=document.getElementById("sc5");\n'
-        '    if(sc5) sc5.textContent=nR>0?nR+"장":"—";\n'
-        '    var maxStep=nR>0?5:4;\n'
-        '    for(var i=0;i<=maxStep;i++){var el=document.getElementById("s"+i);if(el)el.classList.remove("locked");}\n'
-        '    G.defaultResult={cells:G.cells.slice(),result:Object.assign({},G.result)};\n'
-        '    G.optimalResult=null;\n'
-        '    G.step=0;G.bStep=-1;\n'
-        '    document.getElementById("cvEmpty").style.display="none";\n'
-        '    document.getElementById("animCtrl").style.display="";\n'
-        '    drawAll();upMetrics();upBoards();hiStep(0);upSchedule();upWallBadge();\n'
-        '    document.getElementById("stepLbl").textContent="[Python RTL최적화]";\n'
-        '    setTimeout(function(){aPlay();},300);\n'
-        '  };\n'
-        '  var _oDraw=window.drawAll;\n'
-        '  window.drawAll=function(){\n'
-        '    if(G.ply!==2||!G._L2||!G.wall||!PRECOMPUTED[G.wall.wall_id]){\n'
-        '      return _oDraw.call(this);\n'
-        '    }\n'
-        '    var r=G.result;\n'
-        '    document.getElementById("lbl1").textContent="1P (오프셋 450mm)";\n'
-        '    document.getElementById("wrap1").style.display="";\n'
-        '    document.getElementById("wrap2").style.display="";\n'
-        '    var cm=Math.floor(CMAX*0.47);\n'
-        '    var off1=Math.min(STUD,Math.floor(r.bw/2));\n'
-        '    drawCV("cv1",r,G.cells,cm,CHMAX,off1);\n'
-        '    drawCV("cv2",r,G._L2,cm,CHMAX,0);\n'
-        '    upBoardList();\n'
-        '  };\n'
-        '  if(typeof IFC!=="undefined"&&IFC&&IFC.length>0){\n'
-        '    setTimeout(function(){\n'
-        '      if(typeof selectWall==="function"&&typeof run==="function"){\n'
-        '        selectWall(IFC[0]);\n'
-        '        setTimeout(function(){ run(); },100);\n'
-        '      }\n'
-        '    },50);\n'
-        '  }\n'
-        '})();\n'
-        '</script>'
-    )
+_COMBO_LABELS = {'gyp1': '석고보드 1P', 'gyp2': '석고보드 2P',
+                 'ply1': '합판 1P', 'ply2': '합판 2P'}
 
 
-def _sim_js_patch_multi(all_json: str, default_key: str) -> str:
-    """4조합(석고1P/2P·합판1P/2P) 전부 주입. 자재/겹수 토글 시 EXE 결과 중 선택만.
-    HTML 자체 JS 재계산 없이 '계산=EXE, 출력=HTML' 원칙 적용."""
-    return (
-        '<script>\n'
-        'var PRECOMPUTED_ALL=' + all_json + ';\n'
-        'var PRECOMPUTED=PRECOMPUTED_ALL["' + default_key + '"]||{};\n'
-        '(function(){\n'
-        '  if(!window.PRECOMPUTED_ALL) return;\n'
-        '  function cfgKey(){var m=(G.mat==="ply")?"ply":"gyp";var p=(G.ply===2)?2:1;return m+p;}\n'
-        '  function applyPCConfig(){window.PRECOMPUTED=PRECOMPUTED_ALL[cfgKey()]||{};}\n'
-        '  var _oRun=window.run;\n'
-        '  window.run=function(){\n'
-        '    if(!G.wall){alert("벽을 선택하세요");return;}\n'
-        '    applyPCConfig();\n'
-        '    var wid=G.wall.wall_id;\n'
-        '    var pc=PRECOMPUTED[wid];\n'
-        '    if(!pc){return _oRun.call(this);}\n'
-        '    window._cornerWarnCount=0;\n'
-        '    var mk=+document.getElementById("markup").value/100;\n'
-        '    G.cells=pc.cells_L1;\n'
-        '    if(G.ply===2){G._L1=pc.cells_L1;G._L2=pc.cells_L2||pc.cells_L1;}\n'
-        '    else{G._L1=null;G._L2=null;}\n'
-        '    var nR=pc.nR||0;\n'
-        '    var gs=Math.ceil(pc.tot*(1+mk));\n'
-        '    G.result={W:G.wall.length,H:G.wall.height,\n'
-        '      bw:pc.bw||900,bh:pc.bh||1800,orient:pc.orient||"RTL",\n'
-        '      ops:pc.ops||[],nF:pc.nF,nE:pc.nE,nN:pc.nN,nR:nR,\n'
-        '      tot:pc.tot,cutCount:pc.nE+pc.nN,lr:pc.lr,\n'
-        '      notchRatio:pc.tot>0?pc.nN/pc.tot:0,net:pc.net,gs:gs,mk:mk};\n'
-        '    document.getElementById("sc2").textContent=pc.nF+"장";\n'
-        '    document.getElementById("sc3").textContent=pc.nE+"장";\n'
-        '    document.getElementById("sc4").textContent=pc.nN+"장";\n'
-        '    var sc5=document.getElementById("sc5");\n'
-        '    if(sc5) sc5.textContent=nR>0?nR+"장":"—";\n'
-        '    var maxStep=nR>0?5:4;\n'
-        '    for(var i=0;i<=maxStep;i++){var el=document.getElementById("s"+i);if(el)el.classList.remove("locked");}\n'
-        '    G.defaultResult={cells:G.cells.slice(),result:Object.assign({},G.result)};\n'
-        '    G.optimalResult=null;\n'
-        '    G.step=0;G.bStep=-1;\n'
-        '    document.getElementById("cvEmpty").style.display="none";\n'
-        '    document.getElementById("animCtrl").style.display="";\n'
-        '    drawAll();upMetrics();upBoards();hiStep(0);upSchedule();upWallBadge();\n'
-        '    document.getElementById("stepLbl").textContent="[Python 최적화]";\n'
-        '    setTimeout(function(){aPlay();},300);\n'
-        '  };\n'
-        '  var _oDraw=window.drawAll;\n'
-        '  window.drawAll=function(){\n'
-        '    if(G.ply!==2||!G._L2||!G.wall||!PRECOMPUTED[G.wall.wall_id]){\n'
-        '      return _oDraw.call(this);\n'
-        '    }\n'
-        '    var r=G.result;\n'
-        '    document.getElementById("lbl1").textContent="1P (오프셋 450mm)";\n'
-        '    document.getElementById("wrap1").style.display="";\n'
-        '    document.getElementById("wrap2").style.display="";\n'
-        '    var cm=Math.floor(CMAX*0.47);\n'
-        '    var off1=Math.min(STUD,Math.floor(r.bw/2));\n'
-        '    drawCV("cv1",r,G.cells,cm,CHMAX,off1);\n'
-        '    drawCV("cv2",r,G._L2,cm,CHMAX,0);\n'
-        '    upBoardList();\n'
-        '  };\n'
-        '  var _oSetMat=window.setMat;\n'
-        '  window.setMat=function(m){_oSetMat(m);applyPCConfig();if(G.wall)window.run();};\n'
-        '  var _oSetPly=window.setPly;\n'
-        '  window.setPly=function(p){_oSetPly(p);applyPCConfig();if(G.wall)window.run();};\n'
-        '  // 초기 설정: 위저드 선택값\n'
-        '  var dk="' + default_key + '";\n'
-        '  var dm=(dk.indexOf("ply")===0)?"ply":"gyp";\n'
-        '  var dp=(dk.charAt(dk.length-1)==="2")?2:1;\n'
-        '  _oSetMat(dm);_oSetPly(dp);applyPCConfig();\n'
-        '  if(typeof IFC!=="undefined"&&IFC&&IFC.length>0){\n'
-        '    setTimeout(function(){\n'
-        '      if(typeof selectWall==="function"&&typeof run==="function"){\n'
-        '        selectWall(IFC[0]);\n'
-        '        setTimeout(function(){\n'
-        '          run();\n'
-        '          // QA 전수조사: 모든 벽 공백·겹침·누락 자동 검증\n'
-        '          if(typeof validateAllWalls==="function"){\n'
-        '            setTimeout(function(){ validateAllWalls(); },400);\n'
-        '          }\n'
-        '        },100);\n'
-        '      }\n'
-        '    },50);\n'
-        '  }\n'
-        '})();\n'
-        '</script>'
-    )
-
-
-def make_simulator_html(sim_walls: list, ifc_name: str,
-                        template_path: str, opt_results=None,
-                        opt_results_all=None, default_key='gyp1') -> str:
-    """
-    sim_walls: ifc_verifier.export_simulator_walls() 반환값
-    opt_results: optimize_building() 반환 results (단일 조합 주입, 선택)
-    opt_results_all: {'gyp1':results, 'gyp2':..., 'ply1':..., 'ply2':...} (4조합 전부)
-    default_key: 시작 시 표시할 조합 (위저드 선택)
-    """
+def _sim_safe_json(obj):
+    """JSON을 <script> 안에 안전하게 삽입 — </script> 분리 방지."""
     import json as _json
-    import re as _re
+    return _json.dumps(obj, ensure_ascii=False).replace('</', '<\\/')
 
-    with open(template_path, encoding='utf-8') as f:
-        html = f.read()
 
-    def _safe_json(obj):
-        """JSON을 HTML <script> 안에 안전하게 삽입: </script> 방지."""
-        return _json.dumps(obj, ensure_ascii=False).replace('</', '<\\/')
+def _wall_combo_data(r: dict) -> dict:
+    """optimize_wall 결과 1개 → 시뮬레이터 조합 데이터."""
+    pls = r.get('placements', [])
+    def _lp(layer):
+        return [{'x': p['x'], 'y': p['y'], 'w': p['w'], 'h': p['h'], 'type': p['type']}
+                for p in pls if p.get('layer', 1) == layer and p.get('type') != 'opening']
+    def _ops(layer):
+        return [{'x': p['x'], 'y': p['y'], 'w': p['w'], 'h': p['h']}
+                for p in pls if p.get('layer', 1) == layer and p.get('type') == 'opening']
+    pls_L1 = _lp(1)
+    pls_L2 = _lp(2)
+    return {
+        'boards':        r.get('boards', 0),
+        'reuse_in':      r.get('reuse_in', 0),
+        'loss_pct':      round(r.get('loss_pct', 0), 1),
+        'layout':        r.get('layout', ''),
+        'pls_L1':        pls_L1,
+        'pls_L2':        pls_L2,
+        'ops':           _ops(1),
+        'plywood_zones': r.get('plywood_zones', []),
+        'is_2p':         bool(pls_L2),
+    }
 
-    # ── 벽 데이터 주입 ──
-    html = html.replace('__IFC_WALLS__', _safe_json(sim_walls))
 
-    # ── STOREY_ORDER ──
-    seen = []
-    for w in sim_walls:
-        s = w.get('storey', '')
-        if s and s not in seen:
-            seen.append(s)
-    std = ['GL', 'B3', 'B2', 'B1', '1F', '2F', '3F', '4F', '5F', 'RF']
-    ordered = [s for s in std if s in seen] + [s for s in seen if s not in std]
-    html = html.replace('__STOREY_ORDER__', _safe_json(ordered))
+def make_simulator_html(sim_walls, ifc_name, template_path=None,
+                        opt_results=None, opt_results_all=None,
+                        default_key='gyp1'):
+    """자체완결형 시뮬레이터 HTML (템플릿 불필요).
 
-    # ── 벽 수 / 프로젝트명 ──
-    wall_cnt = str(len(sim_walls))
-    html = html.replace('__WALL_COUNT__', wall_cnt)
+    sim_walls       : export_simulator_walls() 결과 (벽 메타데이터)
+    opt_results     : 단일 조합 결과 (opt_results_all 없을 때)
+    opt_results_all : {'gyp1':results, 'gyp2':..., 'ply1':..., 'ply2':...}
+    default_key     : 시작 조합
+    """
     proj_name = ifc_name.replace('.ifc', '').replace('.IFC', '')
-    html = _re.sub(
-        r'<span class="sub">[^<]*</span>',
-        f'<span class="sub">{proj_name} · {wall_cnt}개 벽 · IFC 자동연동</span>',
-        html, count=1
-    )
-    html = _re.sub(
-        r'<title>[^<]*</title>',
-        f'<title>석고보드·합판 배치 시스템 — {proj_name}</title>',
-        html
-    )
 
-    # ── Python 최적화 결과 주입 ──
-    sim_map = {w['wall_id']: w for w in sim_walls}
+    # ── 조합 정규화 ──
+    combos = {}
     if opt_results_all:
-        # 4조합 전부 주입 → HTML 토글은 EXE 결과 중 선택만 (재계산 없음)
-        all_pc = {}
-        for key, res in opt_results_all.items():
-            if not res:
-                continue
-            bw, bh = _CONFIG_DIMS.get(key, (900, 1800))
-            all_pc[key] = _build_precomputed(res, sim_map, bw, bh)
-        if all_pc:
-            if default_key not in all_pc:
-                default_key = next(iter(all_pc))
-            all_json = _safe_json(all_pc)
-            _last = html.rfind('</body>')
-            if _last != -1:
-                html = (html[:_last]
-                        + _sim_js_patch_multi(all_json, default_key)
-                        + '\n</body>' + html[_last+7:])
+        combos = {k: v for k, v in opt_results_all.items() if v}
     elif opt_results:
-        precomputed = _build_precomputed(opt_results, sim_map, BW, BH)
-        if precomputed:
-            pc_json = _safe_json(precomputed)
-            _last = html.rfind('</body>')
-            if _last != -1:
-                html = html[:_last] + _sim_js_patch(pc_json) + '\n</body>' + html[_last+7:]
+        combos = {'gyp1': opt_results}
+        default_key = 'gyp1'
+    if combos and default_key not in combos:
+        default_key = next(iter(combos))
 
+    # ── 정적 벽 목록 (조합 무관: id/층/치수/내외기) ──
+    sim_map = {w['wall_id']: w for w in sim_walls}
+    ref = combos.get(default_key) if combos else None
+    if ref is None and combos:
+        ref = next(iter(combos.values()))
+
+    walls_static = []
+    if ref:
+        for r in ref:
+            sw = sim_map.get(r['wall_id'], {})
+            walls_static.append({
+                'wall_id':     r['wall_id'],
+                'floor_id':    r.get('floor_id', sw.get('storey', '')),
+                'storey':      sw.get('storey', r.get('floor_id', '')),
+                'is_external': r.get('is_external', False),
+                'L':           r['L'],
+                'H':           r['H'],
+            })
+    else:
+        for sw in sim_walls:
+            walls_static.append({
+                'wall_id': sw['wall_id'], 'floor_id': sw.get('storey', ''),
+                'storey': sw.get('storey', ''), 'is_external': False,
+                'L': sw.get('length', 0), 'H': sw.get('height', 0),
+            })
+
+    # ── 조합별 데이터 ──
+    data = {}
+    for key, res in combos.items():
+        data[key] = {r['wall_id']: _wall_combo_data(r) for r in res}
+
+    combo_list = [{'key': k, 'label': _COMBO_LABELS.get(k, k)}
+                  for k in ['gyp1', 'gyp2', 'ply1', 'ply2'] if k in combos]
+    if not combo_list:
+        combo_list = [{'key': 'none', 'label': '결과 없음'}]
+        data = {'none': {}}
+        default_key = 'none'
+
+    html = _SIM_TEMPLATE
+    html = html.replace('__PROJ__', proj_name)
+    html = html.replace('__WALLCNT__', str(len(walls_static)))
+    html = html.replace('__STUD__', str(STUD))
+    html = html.replace('/*__WALLS__*/[]', _sim_safe_json(walls_static))
+    html = html.replace('/*__DATA__*/{}', _sim_safe_json(data))
+    html = html.replace('/*__COMBOS__*/[]', _sim_safe_json(combo_list))
+    html = html.replace('/*__DEFKEY__*/"gyp1"', _sim_safe_json(default_key))
     return html
+
+
+_SIM_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><title>시뮬레이터 — __PROJ__</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Malgun Gothic','나눔고딕',sans-serif;display:flex;flex-direction:column;height:100vh;background:#f0f4f8;overflow:hidden}
+.hdr{background:#1a237e;color:#fff;padding:8px 16px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+.hdr-title{font-size:14px;font-weight:700}
+.hdr-sub{font-size:10.5px;opacity:.72}
+.hdr-sp{flex:1}
+.combo-tog{display:flex;gap:3px}
+.cbtn{padding:3px 11px;font-size:11px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:transparent;color:#fff;cursor:pointer;font-family:inherit}
+.cbtn.active{background:#fff;color:#1a237e;font-weight:700}
+.ltog{display:none;gap:3px;margin-left:10px}
+.lbtn{padding:3px 10px;font-size:11px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:transparent;color:#fff;cursor:pointer;font-family:inherit}
+.lbtn.active{background:#ffd54f;color:#1a237e;font-weight:700}
+.main{display:flex;flex:1;overflow:hidden}
+.sidebar{width:204px;flex-shrink:0;background:#fff;border-right:1px solid #e0e0e0;overflow-y:auto;display:flex;flex-direction:column}
+.sb-search{padding:7px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:2}
+.sb-search input{width:100%;padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:11px;font-family:inherit}
+.fhdr{padding:5px 12px;font-size:10px;font-weight:700;color:#777;background:#f5f5f5;border-bottom:1px solid #eee}
+.witem{padding:6px 12px;cursor:pointer;font-size:11px;border-bottom:1px solid #f0f0f0}
+.witem:hover{background:#e8eaf6}
+.witem.active{background:#1a237e;color:#fff}
+.wi-id{font-weight:700;font-family:Consolas,monospace;font-size:10.5px}
+.wi-dim{font-size:9.5px;opacity:.65;margin-top:1px}
+.wi-info{font-size:9.5px;margin-top:1px}
+.wi-info.ok{color:#2e7d32}.wi-info.warn{color:#e65100}.wi-info.bad{color:#c62828}
+.witem.active .wi-info{color:rgba(255,255,255,.82)}
+.ca{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.stats{background:#fff;border-bottom:1px solid #e0e0e0;padding:7px 14px;display:flex;gap:16px;align-items:center;flex-shrink:0;flex-wrap:wrap;min-height:46px}
+.si{display:flex;flex-direction:column;align-items:center;min-width:52px}
+.si .v{font-size:15px;font-weight:900;color:#1a237e;line-height:1}
+.si .l{font-size:9px;color:#888;margin-top:2px;font-weight:600}
+.ssep{width:1px;height:28px;background:#e0e0e0}
+.sw{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;background:#f0f4f8;padding:14px}
+.emsg{color:#aaa;font-size:12px;text-align:center}
+.legend{display:flex;gap:9px;flex-wrap:wrap;padding:4px 14px 6px;font-size:10px;color:#555;background:#fff;border-top:1px solid #e8e8e8}
+.legend i{display:inline-block;width:11px;height:11px;vertical-align:middle;margin-right:2px;border-radius:2px;border:1px solid #ccc}
+.ctrl{background:#fff;border-top:1px solid #e0e0e0;padding:8px 14px;align-items:center;gap:8px;flex-shrink:0;display:none}
+.cb{padding:4px 12px;font-size:11.5px;font-family:inherit;border:1px solid #c5cae9;border-radius:6px;background:#f5f5f5;cursor:pointer;color:#333}
+.cb:hover{background:#e8eaf6}
+.cb.play{background:#1a237e;color:#fff;border-color:#1a237e;font-weight:700}
+.sinfo{font-size:10.5px;color:#666;min-width:64px;text-align:center;font-family:Consolas,monospace}
+.prog{flex:1;min-width:80px;max-width:260px;height:5px;background:#e0e0e0;border-radius:3px;overflow:hidden}
+.progf{height:100%;background:#1a237e;border-radius:3px;transition:width .08s}
+.spd{display:flex;align-items:center;gap:5px;font-size:10.5px;color:#666}
+.spd input{width:72px}
+</style></head>
+<body>
+<div class="hdr">
+  <div><div class="hdr-title">🏗 석고보드·합판 배치 시뮬레이터</div><div class="hdr-sub">__PROJ__ · __WALLCNT__개 벽</div></div>
+  <div class="hdr-sp"></div>
+  <div class="combo-tog" id="comboTog"></div>
+  <div class="ltog" id="ltog">
+    <button class="lbtn active" id="lb1" onclick="setLayer(1)">Layer 1</button>
+    <button class="lbtn" id="lb2" onclick="setLayer(2)">Layer 2</button>
+    <button class="lbtn" id="lb0" onclick="setLayer(0)" style="display:none">합판보강</button>
+  </div>
+</div>
+<div class="main">
+  <div class="sidebar">
+    <div class="sb-search"><input type="text" placeholder="벽 검색..." id="sbSearch" oninput="buildSidebar()"/></div>
+    <div id="wlist"></div>
+  </div>
+  <div class="ca">
+    <div class="stats" id="stats"><div class="emsg" style="width:100%">← 벽을 선택하세요</div></div>
+    <div class="sw" id="svgWrap"><div class="emsg">벽을 선택하면 시뮬레이션이 시작됩니다</div></div>
+    <div class="legend">
+      <span><i style="background:#dbeafe;border-color:#1d4ed8"></i>온장 L1</span>
+      <span><i style="background:#ffedd5;border-color:#c2410c"></i>온장 L2</span>
+      <span><i style="background:#bfdbfe;border-color:#1d4ed8"></i>절단 L1</span>
+      <span><i style="background:#fed7aa;border-color:#c2410c"></i>절단 L2</span>
+      <span><i style="background:#fef08a;border-color:#ca8a04"></i>개구부처리</span>
+      <span><i style="background:#bbf7d0;border-color:#16a34a"></i>♻재사용</span>
+      <span><i style="background:#e2e8f0;border-color:#94a3b8"></i>개구부</span>
+    </div>
+    <div class="ctrl" id="ctrl">
+      <button class="cb" onclick="goFirst()">⏮</button>
+      <button class="cb" onclick="goPrev()">◀</button>
+      <button class="cb play" id="playBtn" onclick="togglePlay()">▶ 재생</button>
+      <button class="cb" onclick="goNext()">▶|</button>
+      <button class="cb" onclick="goLast()">⏭</button>
+      <span class="sinfo" id="sinfo">0 / 0</span>
+      <div class="prog"><div class="progf" id="progf" style="width:0%"></div></div>
+      <div class="spd">속도<input type="range" id="spd" min="50" max="1200" value="350" step="50" oninput="speed=+this.value;document.getElementById('spdLbl').textContent=this.value+'ms'"><span id="spdLbl">350ms</span></div>
+    </div>
+  </div>
+</div>
+<script>
+var WALLS=/*__WALLS__*/[];
+var DATA=/*__DATA__*/{};
+var COMBOS=/*__COMBOS__*/[];
+var DEFKEY=/*__DEFKEY__*/"gyp1";
+var STUD=__STUD__;
+var cur=null,combo=DEFKEY,layer=1,step=0,timer=null,playing=false,speed=350;
+
+var CMAP={
+  full_1:{f:'#dbeafe',s:'#1d4ed8'},full_2:{f:'#ffedd5',s:'#c2410c'},
+  cut_1:{f:'#bfdbfe',s:'#1d4ed8'},cut_2:{f:'#fed7aa',s:'#c2410c'},
+  cut_op_1:{f:'#fef08a',s:'#ca8a04'},cut_op_2:{f:'#fef08a',s:'#ca8a04'},
+  reuse_1:{f:'#bbf7d0',s:'#16a34a'},reuse_2:{f:'#bbf7d0',s:'#16a34a'},
+  opening:{f:'#e2e8f0',s:'#94a3b8'}
+};
+function ck(t){return t==='opening'?'opening':(t||'full')+'_'+layer;}
+
+function wd(){
+  if(!cur)return null;
+  var d=DATA[combo];
+  if(!d)return null;
+  return d[cur.wall_id]||null;
+}
+function getPls(){
+  var d=wd();
+  if(!d)return[];
+  if(layer===1)return d.pls_L1||[];
+  if(layer===2)return d.pls_L2||[];
+  return[];
+}
+
+function buildComboTog(){
+  var h='';
+  COMBOS.forEach(function(c){
+    var ac=c.key===combo?' active':'';
+    h+='<button class="cbtn'+ac+'" data-k="'+c.key+'" onclick="setCombo(this.dataset.k)">'+c.label+'</button>';
+  });
+  document.getElementById('comboTog').innerHTML=h;
+}
+
+function buildSidebar(){
+  var q=(document.getElementById('sbSearch').value||'').toLowerCase();
+  var d=DATA[combo]||{};
+  var fl={};
+  WALLS.forEach(function(w){var f=w.floor_id||w.storey||'?';if(!fl[f])fl[f]=[];fl[f].push(w);});
+  var h='';
+  Object.keys(fl).sort().forEach(function(f){
+    var ws=fl[f];
+    if(q)ws=ws.filter(function(w){return w.wall_id.toLowerCase().indexOf(q)>=0;});
+    if(!ws.length)return;
+    h+='<div class="fhdr">📍 '+f+'</div>';
+    ws.forEach(function(w){
+      var wc=d[w.wall_id]||{loss_pct:0,boards:0};
+      var lc=wc.loss_pct>10?'bad':(wc.loss_pct>5?'warn':'ok');
+      var ac=cur&&cur.wall_id===w.wall_id?' active':'';
+      h+='<div class="witem'+ac+'" data-wid="'+w.wall_id+'" onclick="selWall(this.dataset.wid)">'+
+        '<div class="wi-id">'+w.wall_id+(w.is_external?' 🔵':'')+'</div>'+
+        '<div class="wi-dim">'+w.L+'×'+w.H+'mm</div>'+
+        '<div class="wi-info'+(ac?'':' '+lc)+'">로스 '+wc.loss_pct+'% · '+wc.boards+'장</div>'+
+        '</div>';
+    });
+  });
+  document.getElementById('wlist').innerHTML=h||'<div class="emsg" style="padding:20px">검색 결과 없음</div>';
+}
+
+function selWall(wid){
+  cur=null;
+  for(var i=0;i<WALLS.length;i++){if(WALLS[i].wall_id===wid){cur=WALLS[i];break;}}
+  if(!cur)return;
+  stopAnim();layer=1;step=0;
+  buildSidebar();
+  syncLayerTog();
+  document.getElementById('ctrl').style.display='flex';
+  updStats();render();startAnim();
+}
+
+function setCombo(k){
+  if(!DATA[k])return;
+  combo=k;step=0;layer=1;stopAnim();
+  buildComboTog();buildSidebar();syncLayerTog();
+  if(cur){updStats();render();startAnim();}
+}
+
+function syncLayerTog(){
+  var d=wd();
+  var lt=document.getElementById('ltog');
+  if(d&&d.is_2p){
+    lt.style.display='flex';
+    document.getElementById('lb0').style.display=(d.plywood_zones&&d.plywood_zones.length)?'':'none';
+  }else if(d&&d.plywood_zones&&d.plywood_zones.length){
+    lt.style.display='flex';
+    document.getElementById('lb2').style.display='none';
+    document.getElementById('lb0').style.display='';
+  }else{
+    lt.style.display='none';
+  }
+  ['lb1','lb2','lb0'].forEach(function(id,i){var el=document.getElementById(id);if(el)el.classList.toggle('active',[1,2,0][i]===layer);});
+}
+
+function setLayer(l){
+  layer=l;step=0;stopAnim();
+  ['lb1','lb2','lb0'].forEach(function(id,i){var el=document.getElementById(id);if(el)el.classList.toggle('active',[1,2,0][i]===l);});
+  render();
+  if(l!==0)startAnim();
+}
+
+function render(){
+  if(!cur)return;
+  if(layer===0){document.getElementById('svgWrap').innerHTML=plySVG();updProg();return;}
+  var L=cur.L,H=cur.H,pls=getPls(),vis=pls.slice(0,step);
+  var wrap=document.getElementById('svgWrap');
+  var mW=Math.max(200,wrap.clientWidth-28),mH=Math.max(150,wrap.clientHeight-28);
+  var sc=Math.min(mW/L,mH/H);
+  var sw=Math.round(L*sc),sh=Math.round(H*sc);
+  var d=wd();
+  var sc2=layer===1?'#1d4ed8':'#c2410c';
+  var p=['<svg viewBox="0 0 '+sw+' '+(sh+22)+'" width="'+sw+'" height="'+(sh+22)+'" xmlns="http://www.w3.org/2000/svg">'];
+  p.push('<rect x="0" y="0" width="'+sw+'" height="'+sh+'" fill="#f8fafc" stroke="'+sc2+'" stroke-width="2"/>');
+  var x=0;
+  while(x<=L+0.5){var gx=Math.round(x*sc);p.push('<line x1="'+gx+'" y1="0" x2="'+gx+'" y2="'+sh+'" stroke="#d1d5db" stroke-width="0.6" stroke-dasharray="4 3"/>');x+=STUD;}
+  if(d&&d.ops){d.ops.forEach(function(o){
+    var ox=Math.round(o.x*sc),oy=Math.round((H-o.y-o.h)*sc),ow=Math.round(o.w*sc),oh=Math.round(o.h*sc);
+    p.push('<rect x="'+ox+'" y="'+oy+'" width="'+ow+'" height="'+oh+'" fill="#e2e8f0" stroke="#94a3b8" stroke-dasharray="5 3" stroke-width="1"/>');
+    if(ow>28&&oh>16)p.push('<text x="'+(ox+ow/2)+'" y="'+(oy+oh/2+4)+'" text-anchor="middle" font-size="9" fill="#94a3b8">개구부</text>');
+  });}
+  vis.forEach(function(pl){
+    var px=Math.round(pl.x*sc),py=Math.round((H-pl.y-pl.h)*sc);
+    var pw=Math.max(1,Math.round(pl.w*sc)),ph=Math.max(1,Math.round(pl.h*sc));
+    var t=pl.type||'full',c=CMAP[ck(t)]||CMAP.full_1;
+    p.push('<rect x="'+px+'" y="'+py+'" width="'+pw+'" height="'+ph+'" fill="'+c.f+'" stroke="'+c.s+'" stroke-width="1"/>');
+    if(pw>36&&ph>18){
+      var ic=t==='reuse'?'♻':(t.indexOf('cut')>=0?'✂':'');
+      p.push('<text x="'+(px+pw/2)+'" y="'+(py+ph/2+4)+'" text-anchor="middle" font-size="9" fill="'+c.s+'" font-weight="600">'+ic+' '+pl.w+'×'+pl.h+'</text>');
+    }
+  });
+  p.push('<text x="'+(sw/2)+'" y="'+(sh+16)+'" text-anchor="middle" font-size="10" fill="#64748b">L='+L+' × H='+H+'mm · '+(cur.is_external?'외기':'내기')+(d?' · '+d.layout:'')+'</text>');
+  p.push('</svg>');
+  wrap.innerHTML=p.join('');
+  updProg();
+}
+
+function plySVG(){
+  var d=wd();
+  if(!d||!d.plywood_zones||!d.plywood_zones.length)return'<div class="emsg">합판 보강 없음</div>';
+  var L=cur.L,H=cur.H,wrap=document.getElementById('svgWrap');
+  var mW=Math.max(200,wrap.clientWidth-28),mH=Math.max(150,wrap.clientHeight-28);
+  var sc=Math.min(mW/L,mH/H),sw=Math.round(L*sc),sh=Math.round(H*sc);
+  var ZC={'도어 보강':['#fee2e2','#dc2626'],'TV·상부장 보강':['#fef9c3','#ca8a04'],'선반 보강':['#ede9fe','#7c3aed']};
+  var p=['<svg viewBox="0 0 '+sw+' '+(sh+22)+'" width="'+sw+'" height="'+(sh+22)+'" xmlns="http://www.w3.org/2000/svg">'];
+  p.push('<rect x="0" y="0" width="'+sw+'" height="'+sh+'" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>');
+  var x=0;
+  while(x<=L+0.5){var gx=Math.round(x*sc);p.push('<line x1="'+gx+'" y1="0" x2="'+gx+'" y2="'+sh+'" stroke="#e2e8f0" stroke-width="0.5"/>');x+=STUD;}
+  if(d.ops){d.ops.forEach(function(o){
+    var ox=Math.round(o.x*sc),oy=Math.round((H-o.y-o.h)*sc),ow=Math.round(o.w*sc),oh=Math.round(o.h*sc);
+    p.push('<rect x="'+ox+'" y="'+oy+'" width="'+ow+'" height="'+oh+'" fill="#e2e8f0" stroke="#94a3b8" stroke-dasharray="3 2" stroke-width="0.8"/>');
+  });}
+  d.plywood_zones.forEach(function(z){
+    var c=ZC[z.type]||['#fef3c7','#d97706'];
+    var zx=Math.round(z.x*sc),zy=Math.round((H-z.y-z.h)*sc),zw=Math.round(z.w*sc),zh=Math.round(z.h*sc);
+    p.push('<rect x="'+zx+'" y="'+zy+'" width="'+zw+'" height="'+zh+'" fill="'+c[0]+'" fill-opacity="0.7" stroke="'+c[1]+'" stroke-width="1.5"/>');
+    if(zw>40&&zh>14)p.push('<text x="'+(zx+zw/2)+'" y="'+(zy+zh/2+4)+'" text-anchor="middle" font-size="9" font-weight="700" fill="'+c[1]+'">'+z.type+' '+z.w+'×'+z.h+'mm '+z.thick+'T</text>');
+  });
+  p.push('<text x="'+(sw/2)+'" y="'+(sh+16)+'" text-anchor="middle" font-size="10" fill="#64748b">합판 보강 구역</text>');
+  p.push('</svg>');
+  return p.join('');
+}
+
+function updStats(){
+  var d=wd();
+  if(!cur||!d)return;
+  var lc=d.loss_pct>10?'#c62828':(d.loss_pct>5?'#e65100':'#2e7d32');
+  function si(v,l){return'<div class="si"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>';}
+  function sep(){return'<div class="ssep"></div>';}
+  document.getElementById('stats').innerHTML=
+    si(d.boards,'온장 (장)')+sep()+
+    si(d.reuse_in>0?d.reuse_in+'장':'—','재사용')+sep()+
+    '<div class="si"><div class="v" style="color:'+lc+'">'+d.loss_pct+'%</div><div class="l">로스율</div></div>'+sep()+
+    si(cur.L+'×'+cur.H,'치수(mm)')+sep()+
+    si(cur.is_external?'외기':'내기','구분')+sep()+
+    si(d.is_2p?'2P':'1P','겹수');
+}
+
+function updProg(){
+  var tot=getPls().length;
+  document.getElementById('sinfo').textContent=step+' / '+tot;
+  document.getElementById('progf').style.width=(tot>0?(step/tot*100):0)+'%';
+}
+
+function startAnim(){
+  if(playing||layer===0)return;
+  if(step>=getPls().length)step=0;
+  playing=true;
+  var b=document.getElementById('playBtn');
+  b.textContent='⏸ 일시정지';b.style.background='#455a64';b.style.borderColor='#455a64';
+  adv();
+}
+function stopAnim(){
+  if(timer){clearTimeout(timer);timer=null;}
+  playing=false;
+  var b=document.getElementById('playBtn');
+  if(b){b.textContent='▶ 재생';b.style.background='#1a237e';b.style.borderColor='#1a237e';}
+}
+function adv(){
+  if(!playing||!cur)return;
+  if(step<getPls().length){step++;render();timer=setTimeout(adv,speed);}
+  else stopAnim();
+}
+function togglePlay(){if(playing)stopAnim();else startAnim();}
+function goFirst(){stopAnim();step=0;render();}
+function goLast(){stopAnim();step=getPls().length;render();}
+function goNext(){stopAnim();if(step<getPls().length){step++;render();}}
+function goPrev(){stopAnim();if(step>0){step--;render();}}
+
+window.addEventListener('resize',function(){if(cur)render();});
+
+buildComboTog();
+buildSidebar();
+if(WALLS.length>0)selWall(WALLS[0].wall_id);
+</script>
+</body></html>"""
