@@ -65,7 +65,7 @@ def run_setup_wizard():
              font=("맑은 고딕", 15, "bold"),
              bg="#f0f4f8", fg="#1a237e").pack(pady=(18, 2))
     tk.Label(root,
-             text="① 자재·시공 옵션 선택  →  ② IFC 파일 선택  →  ③ (선택) 교차검증 기준값 입력  →  실행",
+             text="① 옵션 선택  →  ② IFC 파일 선택  →  ③ (선택) 교차검증 기준값 입력  →  실행",
              font=("맑은 고딕", 9),
              bg="#f0f4f8", fg="#546e7a").pack(pady=(0, 14))
 
@@ -77,8 +77,6 @@ def run_setup_wizard():
     tab_opt = tk.Frame(nb, bg="#f0f4f8", padx=16, pady=12)
     nb.add(tab_opt, text="  ① 시공 옵션  ")
 
-    mat_var   = tk.StringVar(value=state['mat'])
-    ply_var   = tk.IntVar(value=state['ply'])
     reuse_var = tk.BooleanVar(value=state['reuse'])
 
     def _radio_group(parent, title, color, var, options, r):
@@ -92,19 +90,16 @@ def run_setup_wizard():
                            bg="#f0f4f8", activebackground="#f0f4f8"
                            ).pack(anchor="w", pady=1)
 
+    tk.Label(tab_opt,
+             text="자재(석고보드/합판)와 시공 겹수(1P/2P)는 HTML에서 자유롭게 전환 가능합니다.",
+             font=("맑은 고딕", 9), bg="#f0f4f8", fg="#546e7a"
+             ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+
     tab_opt.columnconfigure(0, weight=1)
-    _radio_group(tab_opt, "자재", "#1565c0", mat_var, [
-        ("석고보드", "석고보드  (900×1800 mm)"),
-        ("합판",     "합판        (1220×2440 mm)"),
-    ], 0)
-    _radio_group(tab_opt, "시공 겹수", "#6a1b9a", ply_var, [
-        (1, "1P  (단겹 — 일반 내벽)"),
-        (2, "2P  (이중겹 — 방음·방화 / 이음매 450mm 엇갈림)"),
-    ], 1)
     _radio_group(tab_opt, "자투리 재사용", "#2e7d32", reuse_var, [
         (True,  "활성  (자투리 폭≥300mm, 높이≥450mm 재활용)"),
         (False, "비활성  (순수 신규 보드 수량만)"),
-    ], 2)
+    ], 1)
 
     # ───── 탭 2: IFC 파일 ─────
     tab_ifc = tk.Frame(nb, bg="#f0f4f8", padx=16, pady=14)
@@ -196,8 +191,6 @@ def run_setup_wizard():
             nb.select(tab_ifc)
             return
 
-        state['mat']   = mat_var.get()
-        state['ply']   = ply_var.get()
         state['reuse'] = reuse_var.get()
 
         # 교차검증 기준값
@@ -456,14 +449,36 @@ def main():
             f.write(html_txt)
         print(f"✓ 검증 HTML 저장: {verify_html}")
 
-        # ── STEP 7: 최적화 계산 ───────────────────────
+        # ── STEP 7: 최적화 계산 (석고1P·2P / 합판1P·2P 4조합) ──
         opt_walls = _walls_for_optimizer(data['walls'])
         if not opt_walls:
             raise RuntimeError(
                 "최적화 가능한 벽이 없습니다 (모든 벽의 치수 추출 실패).")
-        prog.step(6, f"{len(opt_walls)}개 벽 처리 중 — "
-                     f"{mat} / {ply}P / 재사용={'활성' if reuse else '비활성'}")
-        results, total_loss = opt.optimize_building(opt_walls)
+
+        _COMBOS = [
+            ('gyp1',  900, 1800, False),
+            ('gyp2',  900, 1800, True),
+            ('ply1', 1220, 2440, False),
+            ('ply2', 1220, 2440, True),
+        ]
+        default_key = ('ply' if mat == '합판' else 'gyp') + str(ply)
+
+        prog.step(6, f"{len(opt_walls)}개 벽 × 4조합 계산 중 — 재사용={'활성' if reuse else '비활성'}")
+        all_opt_results = {}
+        results = []
+        total_loss = 0.0
+        for cfg_key, bw, bh, is_2p in _COMBOS:
+            opt.BW = bw; opt.BH = bh; opt.IS_2P = is_2p
+            r, loss = opt.optimize_building(opt_walls)
+            all_opt_results[cfg_key] = r
+            if cfg_key == default_key:
+                results = r
+                total_loss = loss
+
+        # globals 원래 선택으로 복원
+        opt.BW = 1220 if mat == '합판' else 900
+        opt.BH = 2440 if mat == '합판' else 1800
+        opt.IS_2P = (ply >= 2)
 
         # ── STEP 8: 최적화 HTML 생성 ──────────────────
         prog.step(7, f"전체 로스율 {total_loss:.2f}% / "
@@ -477,12 +492,14 @@ def main():
 
         # ── STEP 9: 시뮬레이터 UI HTML 생성 ──────────
         sim_html = None
-        prog.step(8, f"벽 {len(data['walls'])}개 UI 데이터 주입 중...")
+        prog.step(8, f"벽 {len(data['walls'])}개 UI 데이터 주입 중 (4조합 사전계산)...")
         try:
             tmpl = _simulator_template_path()
             sim_walls = verifier.export_simulator_walls(data['walls'])
             sim_txt   = opt.make_simulator_html(
-                sim_walls, ifc_name, tmpl, opt_results=results)
+                sim_walls, ifc_name, tmpl,
+                opt_results_all=all_opt_results,
+                default_key=default_key)
             sim_html  = base + "_시뮬레이터.html"
             with open(sim_html, "w", encoding="utf-8") as f:
                 f.write(sim_txt)

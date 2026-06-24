@@ -646,10 +646,10 @@ def _plywood_svg(r: dict, scale_h: int = 210) -> str:
     if not zones:
         return '<div class="nocut">합판 보강 구역 없음</div>'
 
-    s = scale_h / H
-    sw = max(L * s, 120)
+    sw = max(L * (scale_h / H), 120)
     if sw > 720:
-        s = 720 / L; sw = 720
+        sw = 720
+    s = sw / L  # sw 확정 후 scale 재계산 (sw < L*(scale_h/H) 시 비율 보정)
     sh = H * s
 
     def ty(y_mm, h_mm):
@@ -733,10 +733,10 @@ def _one_layer_svg(placements_l: list, L: float, H: float,
     cf     = cut_fill.get(layer, '#eee')
     rf     = reuse_fill.get(layer, '#d1fae5')
 
-    s = scale_h / H
-    sw = max(L * s, 120)
+    sw = max(L * (scale_h / H), 120)
     if sw > 720:
-        s = 720 / L; sw = 720
+        sw = 720
+    s = sw / L  # sw 확정 후 scale 재계산 (최소폭 120px 강제 시 보드가 벽 끝까지 안 그려지는 버그 수정)
     sh = H * s
 
     def ty(y_mm, h_mm):
@@ -1241,6 +1241,52 @@ def _placements_to_js_cells(placements: list, ops_left: list) -> list:
     return cells
 
 
+def _build_precomputed(opt_results: list, sim_map: dict,
+                       bw: int, bh: int) -> dict:
+    """optimize_building 결과 → {wall_id: pc} (시뮬레이터 주입용). bw/bh 명시."""
+    precomputed = {}
+    for r in opt_results:
+        wid = r['wall_id']
+        sw = sim_map.get(wid)
+        if sw is None:
+            continue
+        ops_center = sw.get('openings', [])
+        ops_left = [
+            {'ox': o['x'] - o['width'] / 2, 'ow': o['width'],
+             'oy': o['y'], 'oh': o['height']}
+            for o in ops_center
+        ]
+        cells_L1 = _placements_to_js_cells(
+            [p for p in r.get('placements', []) if p.get('layer', 1) == 1],
+            ops_left)
+        cells_L2 = _placements_to_js_cells(
+            [p for p in r.get('placements', []) if p.get('layer', 1) == 2],
+            ops_left)
+        nF = sum(1 for c in cells_L1 if c['type'] == 'full')
+        nE = sum(1 for c in cells_L1 if c['type'] == 'edge_cut')
+        nN = sum(1 for c in cells_L1 if c['type'] == 'notch')
+        nR = r.get('reuse_in', 0)
+        tot = r.get('boards', max(1, nF + nE + nN))
+        precomputed[wid] = {
+            'cells_L1': cells_L1,
+            'cells_L2': cells_L2 if cells_L2 else None,
+            'ops': ops_center,
+            'nF': nF, 'nE': nE, 'nN': nN, 'nR': nR,
+            'tot': tot,
+            'lr': round(r.get('loss_pct', 0) / 100, 6),
+            'bw': bw, 'bh': bh,
+            'gs': round(tot * 1.07),
+            'net': round(r['L'] * r['H'] / 1e6, 4),
+            'orient': r.get('layout', 'RTL'),
+        }
+    return precomputed
+
+
+# 설정키 → (bw, bh)
+_CONFIG_DIMS = {'gyp1': (900, 1800), 'gyp2': (900, 1800),
+                'ply1': (1220, 2440), 'ply2': (1220, 2440)}
+
+
 def _sim_js_patch(pc_json: str) -> str:
     """PRECOMPUTED 주입 + run()/drawAll() 오버라이드 스크립트."""
     return (
@@ -1310,11 +1356,103 @@ def _sim_js_patch(pc_json: str) -> str:
     )
 
 
+def _sim_js_patch_multi(all_json: str, default_key: str) -> str:
+    """4조합(석고1P/2P·합판1P/2P) 전부 주입. 자재/겹수 토글 시 EXE 결과 중 선택만.
+    HTML 자체 JS 재계산 없이 '계산=EXE, 출력=HTML' 원칙 적용."""
+    return (
+        '<script>\n'
+        'var PRECOMPUTED_ALL=' + all_json + ';\n'
+        'var PRECOMPUTED=PRECOMPUTED_ALL["' + default_key + '"]||{};\n'
+        '(function(){\n'
+        '  if(!window.PRECOMPUTED_ALL) return;\n'
+        '  function cfgKey(){var m=(G.mat==="ply")?"ply":"gyp";var p=(G.ply===2)?2:1;return m+p;}\n'
+        '  function applyPCConfig(){window.PRECOMPUTED=PRECOMPUTED_ALL[cfgKey()]||{};}\n'
+        '  var _oRun=window.run;\n'
+        '  window.run=function(){\n'
+        '    if(!G.wall){alert("벽을 선택하세요");return;}\n'
+        '    applyPCConfig();\n'
+        '    var wid=G.wall.wall_id;\n'
+        '    var pc=PRECOMPUTED[wid];\n'
+        '    if(!pc){return _oRun.call(this);}\n'
+        '    window._cornerWarnCount=0;\n'
+        '    var mk=+document.getElementById("markup").value/100;\n'
+        '    G.cells=pc.cells_L1;\n'
+        '    if(G.ply===2){G._L1=pc.cells_L1;G._L2=pc.cells_L2||pc.cells_L1;}\n'
+        '    else{G._L1=null;G._L2=null;}\n'
+        '    var nR=pc.nR||0;\n'
+        '    var gs=Math.ceil(pc.tot*(1+mk));\n'
+        '    G.result={W:G.wall.length,H:G.wall.height,\n'
+        '      bw:pc.bw||900,bh:pc.bh||1800,orient:pc.orient||"RTL",\n'
+        '      ops:pc.ops||[],nF:pc.nF,nE:pc.nE,nN:pc.nN,nR:nR,\n'
+        '      tot:pc.tot,cutCount:pc.nE+pc.nN,lr:pc.lr,\n'
+        '      notchRatio:pc.tot>0?pc.nN/pc.tot:0,net:pc.net,gs:gs,mk:mk};\n'
+        '    document.getElementById("sc2").textContent=pc.nF+"장";\n'
+        '    document.getElementById("sc3").textContent=pc.nE+"장";\n'
+        '    document.getElementById("sc4").textContent=pc.nN+"장";\n'
+        '    var sc5=document.getElementById("sc5");\n'
+        '    if(sc5) sc5.textContent=nR>0?nR+"장":"—";\n'
+        '    var maxStep=nR>0?5:4;\n'
+        '    for(var i=0;i<=maxStep;i++){var el=document.getElementById("s"+i);if(el)el.classList.remove("locked");}\n'
+        '    G.defaultResult={cells:G.cells.slice(),result:Object.assign({},G.result)};\n'
+        '    G.optimalResult=null;\n'
+        '    G.step=0;G.bStep=-1;\n'
+        '    document.getElementById("cvEmpty").style.display="none";\n'
+        '    document.getElementById("animCtrl").style.display="";\n'
+        '    drawAll();upMetrics();upBoards();hiStep(0);upSchedule();upWallBadge();\n'
+        '    document.getElementById("stepLbl").textContent="[Python 최적화]";\n'
+        '    setTimeout(function(){aPlay();},300);\n'
+        '  };\n'
+        '  var _oDraw=window.drawAll;\n'
+        '  window.drawAll=function(){\n'
+        '    if(G.ply!==2||!G._L2||!G.wall||!PRECOMPUTED[G.wall.wall_id]){\n'
+        '      return _oDraw.call(this);\n'
+        '    }\n'
+        '    var r=G.result;\n'
+        '    document.getElementById("lbl1").textContent="1P (오프셋 450mm)";\n'
+        '    document.getElementById("wrap1").style.display="";\n'
+        '    document.getElementById("wrap2").style.display="";\n'
+        '    var cm=Math.floor(CMAX*0.47);\n'
+        '    var off1=Math.min(STUD,Math.floor(r.bw/2));\n'
+        '    drawCV("cv1",r,G.cells,cm,CHMAX,off1);\n'
+        '    drawCV("cv2",r,G._L2,cm,CHMAX,0);\n'
+        '    upBoardList();\n'
+        '  };\n'
+        '  var _oSetMat=window.setMat;\n'
+        '  window.setMat=function(m){_oSetMat(m);applyPCConfig();if(G.wall)window.run();};\n'
+        '  var _oSetPly=window.setPly;\n'
+        '  window.setPly=function(p){_oSetPly(p);applyPCConfig();if(G.wall)window.run();};\n'
+        '  // 초기 설정: 위저드 선택값\n'
+        '  var dk="' + default_key + '";\n'
+        '  var dm=(dk.indexOf("ply")===0)?"ply":"gyp";\n'
+        '  var dp=(dk.charAt(dk.length-1)==="2")?2:1;\n'
+        '  _oSetMat(dm);_oSetPly(dp);applyPCConfig();\n'
+        '  if(typeof IFC!=="undefined"&&IFC&&IFC.length>0){\n'
+        '    setTimeout(function(){\n'
+        '      if(typeof selectWall==="function"&&typeof run==="function"){\n'
+        '        selectWall(IFC[0]);\n'
+        '        setTimeout(function(){\n'
+        '          run();\n'
+        '          // QA 전수조사: 모든 벽 공백·겹침·누락 자동 검증\n'
+        '          if(typeof validateAllWalls==="function"){\n'
+        '            setTimeout(function(){ validateAllWalls(); },400);\n'
+        '          }\n'
+        '        },100);\n'
+        '      }\n'
+        '    },50);\n'
+        '  }\n'
+        '})();\n'
+        '</script>'
+    )
+
+
 def make_simulator_html(sim_walls: list, ifc_name: str,
-                        template_path: str, opt_results=None) -> str:
+                        template_path: str, opt_results=None,
+                        opt_results_all=None, default_key='gyp1') -> str:
     """
     sim_walls: ifc_verifier.export_simulator_walls() 반환값
-    opt_results: optimize_building() 반환 results (Python 로직 주입용, 선택)
+    opt_results: optimize_building() 반환 results (단일 조합 주입, 선택)
+    opt_results_all: {'gyp1':results, 'gyp2':..., 'ply1':..., 'ply2':...} (4조합 전부)
+    default_key: 시작 시 표시할 조합 (위저드 선택)
     """
     import json as _json
     import re as _re
@@ -1355,45 +1493,26 @@ def make_simulator_html(sim_walls: list, ifc_name: str,
     )
 
     # ── Python 최적화 결과 주입 ──
-    if opt_results:
-        sim_map = {w['wall_id']: w for w in sim_walls}
-        precomputed = {}
-        for r in opt_results:
-            wid = r['wall_id']
-            sw = sim_map.get(wid)
-            if sw is None:
+    sim_map = {w['wall_id']: w for w in sim_walls}
+    if opt_results_all:
+        # 4조합 전부 주입 → HTML 토글은 EXE 결과 중 선택만 (재계산 없음)
+        all_pc = {}
+        for key, res in opt_results_all.items():
+            if not res:
                 continue
-            ops_center = sw.get('openings', [])  # center-x (승훈 JS 규격)
-            ops_left = [
-                {'ox': o['x'] - o['width'] / 2, 'ow': o['width'],
-                 'oy': o['y'], 'oh': o['height']}
-                for o in ops_center
-            ]
-            cells_L1 = _placements_to_js_cells(
-                [p for p in r.get('placements', []) if p.get('layer', 1) == 1],
-                ops_left
-            )
-            cells_L2 = _placements_to_js_cells(
-                [p for p in r.get('placements', []) if p.get('layer', 1) == 2],
-                ops_left
-            )
-            nF = sum(1 for c in cells_L1 if c['type'] == 'full')
-            nE = sum(1 for c in cells_L1 if c['type'] == 'edge_cut')
-            nN = sum(1 for c in cells_L1 if c['type'] == 'notch')
-            nR = r.get('reuse_in', 0)
-            tot = r.get('boards', max(1, nF + nE + nN))
-            precomputed[wid] = {
-                'cells_L1': cells_L1,
-                'cells_L2': cells_L2 if cells_L2 else None,
-                'ops': ops_center,
-                'nF': nF, 'nE': nE, 'nN': nN, 'nR': nR,
-                'tot': tot,
-                'lr': round(r.get('loss_pct', 0) / 100, 6),
-                'bw': BW, 'bh': BH,
-                'gs': round(tot * 1.07),
-                'net': round(r['L'] * r['H'] / 1e6, 4),
-                'orient': r.get('layout', 'RTL'),
-            }
+            bw, bh = _CONFIG_DIMS.get(key, (900, 1800))
+            all_pc[key] = _build_precomputed(res, sim_map, bw, bh)
+        if all_pc:
+            if default_key not in all_pc:
+                default_key = next(iter(all_pc))
+            all_json = _safe_json(all_pc)
+            _last = html.rfind('</body>')
+            if _last != -1:
+                html = (html[:_last]
+                        + _sim_js_patch_multi(all_json, default_key)
+                        + '\n</body>' + html[_last+7:])
+    elif opt_results:
+        precomputed = _build_precomputed(opt_results, sim_map, BW, BH)
         if precomputed:
             pc_json = _safe_json(precomputed)
             _last = html.rfind('</body>')

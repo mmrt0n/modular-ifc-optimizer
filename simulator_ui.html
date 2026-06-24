@@ -468,16 +468,6 @@ function switchMeasure(mat){
     </div>
   </div>
 
-  <!-- 속도 조절 슬라이더 — 항상 표시 -->
-  <div style="background:var(--s1);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-    <span style="font-size:10px;color:var(--t2);flex-shrink:0">⏱ 속도</span>
-    <span style="font-size:9px;color:var(--t3)">빠름</span>
-    <input type="range" id="speedRange" min="80" max="1500" value="350" step="50"
-      style="flex:1;height:4px;accent-color:var(--blue);cursor:pointer"
-      oninput="G.speed=+this.value;document.getElementById('speedLbl').textContent=this.value+'ms'">
-    <span style="font-size:9px;color:var(--t3)">느림</span>
-    <span style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--blue);min-width:44px;text-align:right" id="speedLbl">350ms</span>
-  </div>
 
 </div>
 
@@ -1252,8 +1242,13 @@ function drawCV(cvId, r, cells, cMax, cMaxH, gridOff){
         ctx.save();
         ctx.beginPath(); ctx.rect(cx,cy,cw,ch);
         (r.ops||[]).forEach(function(o){
-          var oLeft2=o.x-Math.round(o.width/2); var ox=OX+oLeft2*sc, oy=OY+(H-o.y-o.height)*sc;
-          var ow=o.width*sc, oh=o.height*sc;
+          var oLeft2=Math.max(0,o.x-Math.round(o.width/2));
+          var oRight2=Math.min(r.W,oLeft2+o.width);
+          if(oRight2<=oLeft2) return;
+          var oBot2=Math.max(0,o.y),oTop2=Math.min(r.H,oBot2+o.height);
+          if(oTop2<=oBot2) return;
+          var ox=OX+oLeft2*sc, oy=OY+(H-oTop2)*sc;
+          var ow=(oRight2-oLeft2)*sc, oh=(oTop2-oBot2)*sc;
           var ix1=Math.max(cx,ox),iy1=Math.max(cy,oy);
           var ix2=Math.min(cx+cw,ox+ow),iy2=Math.min(cy+ch,oy+oh);
           if(ix2>ix1&&iy2>iy1) ctx.rect(ix1,iy1,ix2-ix1,iy2-iy1);
@@ -1279,8 +1274,14 @@ function drawCV(cvId, r, cells, cMax, cMaxH, gridOff){
     ctx.beginPath();ctx.rect(cx,cy,cw,ch);
     if(c.type==='notch'){
       (r.ops||[]).forEach(function(o){
-        var oLeft2=o.x-Math.round(o.width/2);var ox=OX+oLeft2*sc, oy=OY+(H-o.y-o.height)*sc;
-        var ow=o.width*sc, oh=o.height*sc;
+        // CENTER → LEFT EDGE 변환 (drawOps와 동일한 좌표계)
+        var oLeft2=Math.max(0, o.x-Math.round(o.width/2));
+        var oRight2=Math.min(r.W, oLeft2+o.width);
+        if(oRight2<=oLeft2) return;
+        var oBot2=Math.max(0,o.y), oTop2=Math.min(r.H,oBot2+o.height);
+        if(oTop2<=oBot2) return;
+        var ox=OX+oLeft2*sc, oy=OY+(H-oTop2)*sc;
+        var ow=(oRight2-oLeft2)*sc, oh=(oTop2-oBot2)*sc;
         var ix1=Math.max(cx,ox),iy1=Math.max(cy,oy);
         var ix2=Math.min(cx+cw,ox+ow),iy2=Math.min(cy+ch,oy+oh);
         if(ix2>ix1&&iy2>iy1) ctx.rect(ix1,iy1,ix2-ix1,iy2-iy1);
@@ -1306,6 +1307,36 @@ function drawCV(cvId, r, cells, cMax, cMaxH, gridOff){
   });
 
   drawOps(ctx,r,sc,OX,OY);
+
+  // ── QA: 우측·상단 공백 자동 감지 ───────────────────────────
+  // PRECOMPUTED 1:1 렌더링 보증 — 셀 좌표가 벽 전체를 덮지 못하면 즉시 경고
+  if(s>=2 && active.length>0){
+    var _maxX=0, _maxY=0;
+    cells.forEach(function(c){
+      if(c.type==='skip') return;
+      _maxX=Math.max(_maxX, c.x+c.w);
+      _maxY=Math.max(_maxY, c.y+c.h);
+    });
+    var _gapR=Math.round(W-_maxX);
+    var _gapT=Math.round(H-_maxY);
+    var wname=G.wall?G.wall.name:'?';
+    if(_gapR>5){
+      console.error('[도면오류] '+wname+' 우측 공백 '+_gapR+'mm — 보드 최대 x+w='+Math.round(_maxX)+'mm, 벽 L='+Math.round(W)+'mm');
+      var _gx=OX+_maxX*sc, _gw=Math.max(2,_gapR*sc);
+      ctx.fillStyle='rgba(240,72,72,0.28)'; ctx.fillRect(_gx,OY,_gw,H*sc);
+      ctx.strokeStyle='rgba(240,72,72,0.85)'; ctx.lineWidth=1.2;
+      ctx.setLineDash([4,2]); ctx.strokeRect(_gx,OY,_gw,H*sc); ctx.setLineDash([]);
+      ctx.fillStyle='rgba(240,72,72,0.95)'; ctx.font='bold 8px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('⚠'+_gapR+'mm', _gx+_gw/2, OY+H*sc/2);
+    }
+    if(_gapT>5){
+      console.error('[도면오류] '+wname+' 상단 공백 '+_gapT+'mm — 보드 최대 y+h='+Math.round(_maxY)+'mm, 벽 H='+Math.round(H)+'mm');
+      var _gy=OY, _gh=Math.max(2,(H-_maxY)*sc);
+      ctx.fillStyle='rgba(240,150,48,0.20)'; ctx.fillRect(OX,_gy,W*sc,_gh);
+    }
+  }
+
   drawDims(ctx,r,sc,OX,OY,PL,PB,cv.width,cv.height);
 
   // 진행 표시
@@ -1319,16 +1350,26 @@ function drawCV(cvId, r, cells, cMax, cMaxH, gridOff){
 
 function drawOps(ctx,r,sc,OX,OY){
   (r.ops||[]).forEach(function(o){
-    var oLeft = o.x - Math.round(o.width/2); // IFC 중심점→왼쪽끝
-    var ox=OX+oLeft*sc, oy=OY+(r.H-o.y-o.height)*sc;
-    var ow=o.width*sc, oh=o.height*sc;
+    // o.x = 중심점(CENTER) 기준 — export_simulator_walls에서 round(ox+ow/2)로 저장됨
+    // PRECOMPUTED pc.ops도 동일하게 CENTER 기준이므로 항상 /2 변환 필요
+    var oLeft = o.x - Math.round(o.width/2);
+    // 방어: oLeft가 음수이거나 벽 범위를 벗어나면 클램핑
+    oLeft = Math.max(0, Math.min(oLeft, r.W));
+    var oRight = Math.min(oLeft + o.width, r.W);
+    var oW = oRight - oLeft;
+    if(oW <= 0) return; // 유효하지 않은 개구부 무시 (SW-013 데이터 오염 방어)
+    var oBot = Math.max(0, o.y);
+    var oTop = Math.min(oBot + o.height, r.H);
+    if(oTop <= oBot) return;
+    var ox=OX+oLeft*sc, oy=OY+(r.H-oTop)*sc;
+    var ow=oW*sc, oh=(oTop-oBot)*sc;
     ctx.fillStyle='#0D111A';ctx.fillRect(ox,oy,ow,oh);
     ctx.strokeStyle='#3A4A5E';ctx.lineWidth=1;
     ctx.setLineDash([3,2]);ctx.strokeRect(ox,oy,ow,oh);ctx.setLineDash([]);
     if(ow>28&&oh>14){
       ctx.fillStyle='#3A4A5E';ctx.font='8px sans-serif';
       ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillText((o.type==='door'?'🚪':'🪟')+o.width+'×'+o.height,ox+ow/2,oy+oh/2);
+      ctx.fillText((o.type==='door'?'🚪':'🪟')+Math.round(oW)+'×'+Math.round(oTop-oBot),ox+ow/2,oy+oh/2);
     }
   });
 }
@@ -1680,13 +1721,10 @@ function sortProjectWalls(arr){
 
 function runProjectMode(){
   if(PROJ.running) return;
-  // 파이썬 최적화 결과(PRECOMPUTED)가 현재 자재와 일치하면 그것을 권위값으로 집계
-  // (JS 엔진은 full 셀 재사용을 시도하지 않아 파이썬보다 재사용이 과소집계됨)
-  var pcKeys=(typeof PRECOMPUTED!=='undefined'&&PRECOMPUTED)?Object.keys(PRECOMPUTED):[];
-  if(pcKeys.length){
-    var pcMat=PRECOMPUTED[pcKeys[0]].bw>=1220?'ply':'gyp';
-    if(pcMat===G.mat){ runProjectModePC(); return; }
-  }
+  // 파이썬 최적화 결과가 현재 자재·겹수와 일치하면 권위값으로 집계
+  // (JS 엔진은 full 셀 재사용 미반영 → 과소집계)
+  var _pcm=pcForConfig(G.mat,G.ply||1);
+  if(Object.keys(_pcm).length){ runProjectModePC(); return; }
   PROJ.running=true; PROJ.results=[]; PROJ.log=[];
   document.getElementById('projPanel').style.display='';
   document.getElementById('projStatus').textContent='계산 중...';
@@ -1747,9 +1785,10 @@ function runProjectModePC(){
   var BW=G.mat==='ply'?1220:900;
   var BH=G.mat==='ply'?2440:1800;
   var PAL=G.mat==='ply'?100:990;
+  var pcMap=pcForConfig(G.mat,G.ply||1);
   PROJ.wallSeq=sortProjectWalls(IFC);
   PROJ.wallSeq.forEach(function(w,i){
-    var pc=PRECOMPUTED[w.wall_id];
+    var pc=pcMap[w.wall_id];
     if(!pc) return;
     var oa=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
     var net=(w.length*w.height-oa)/1e6;
@@ -1818,8 +1857,176 @@ function showProjResults(mk,BW,BH,PAL){
 }
 function closeProjPanel(){ document.getElementById('projPanel').style.display='none'; }
 
+// ━━━ QA 자동 전수조사 (638개 벽 전체) ━━━━━━━━━━━━━━━━━━━━━
+// 검사 항목: ① 우측/상단 공백 ② 자재 코드 중복 ③ 보드 겹침 ④ 크기 0 이하
+window._qaErrors = [];
+
+function validateAllWalls(){
+  var pcMap = (typeof pcForConfig === 'function') ? pcForConfig(G.mat, G.ply||1) : {};
+  var hasPc = Object.keys(pcMap).length > 0;
+  var BW = G.mat==='ply'?1220:900, BH = G.mat==='ply'?2440:1800;
+  var errors = [];
+  var walls = (IFC||[]).filter(function(w){
+    return !EXCLUDED_STOREYS[w.storey] && w.length>=300 && w.height>=300;
+  });
+
+  walls.forEach(function(w){
+    var L=w.length, H=w.height;
+    var cells;
+    if(hasPc && pcMap[w.wall_id]){
+      cells = (pcMap[w.wall_id].cells_L1||[]).filter(function(c){ return c.type!=='skip'; });
+    } else {
+      cells = placeGrid(L,H,w.openings||[],BW,BH,0).filter(function(c){ return c.type!=='skip'; });
+    }
+    if(!cells.length) return;
+
+    // ① 우측/상단 공백
+    var maxX=0, maxY=0;
+    cells.forEach(function(c){ maxX=Math.max(maxX,c.x+c.w); maxY=Math.max(maxY,c.y+c.h); });
+    var gapR=Math.round(L-maxX), gapT=Math.round(H-maxY);
+    if(gapR>5)  errors.push({wall:w.name,type:'gap_right',
+      msg:'우측 공백 '+gapR+'mm (최대 x+w='+Math.round(maxX)+'mm, L='+L+'mm)'});
+    if(gapT>5)  errors.push({wall:w.name,type:'gap_top',
+      msg:'상단 공백 '+gapT+'mm (최대 y+h='+Math.round(maxY)+'mm, H='+H+'mm)'});
+
+    // ② 자재 코드 중복 (데이터 격리 오류 감지 — SW-013 시나리오 B)
+    var codeSet={}, dups=[];
+    cells.forEach(function(c){
+      if(codeSet[c.code]) dups.push(c.code);
+      else codeSet[c.code]=true;
+    });
+    if(dups.length) errors.push({wall:w.name,type:'dup_code',
+      msg:'자재 코드 중복 '+dups.length+'개: '+dups.slice(0,3).join(', ')+(dups.length>3?'...':'')});
+
+    // ③ 보드 겹침 (같은 레이어 내 XY 겹침)
+    var overlapFound=false;
+    outer: for(var i=0;i<cells.length&&!overlapFound;i++){
+      for(var j=i+1;j<cells.length&&!overlapFound;j++){
+        var a=cells[i],b=cells[j];
+        var ix1=Math.max(a.x,b.x), iy1=Math.max(a.y,b.y);
+        var ix2=Math.min(a.x+a.w,b.x+b.w), iy2=Math.min(a.y+a.h,b.y+b.h);
+        if(ix2>ix1+0.5 && iy2>iy1+0.5){
+          errors.push({wall:w.name,type:'overlap',
+            msg:'보드 겹침: '+a.code+'(x'+Math.round(a.x)+',y'+Math.round(a.y)+
+              ' '+Math.round(a.w)+'×'+Math.round(a.h)+') ↔ '+
+              b.code+'(x'+Math.round(b.x)+',y'+Math.round(b.y)+
+              ' '+Math.round(b.w)+'×'+Math.round(b.h)+')'});
+          overlapFound=true;
+        }
+      }
+    }
+
+    // ④ 크기 0 이하 (비정상 셀)
+    cells.forEach(function(c){
+      if(c.w<=0||c.h<=0) errors.push({wall:w.name,type:'invalid_size',
+        msg:'크기 오류: '+c.code+' w='+c.w+' h='+c.h});
+    });
+
+    // 개구부 데이터 격리 검증 (SW-013 시나리오 A): 석고보드 셀이 개구부와 완전 겹침
+    var ops = w.openings||[];
+    if(ops.length && hasPc && pcMap[w.wall_id]){
+      var pcOps = pcMap[w.wall_id].ops||[];
+      cells.forEach(function(c){
+        ops.forEach(function(o){
+          var oLeft = o.x - Math.round(o.width/2);
+          var fullCover = (c.x>=oLeft && c.x+c.w<=oLeft+o.width &&
+                           c.y>=o.y  && c.y+c.h<=o.y+o.height);
+          if(fullCover) errors.push({wall:w.name,type:'board_on_opening',
+            msg:'보드 '+c.code+'가 개구부 안에 완전히 들어감 (타공 누락 의심, 시나리오 A)'});
+        });
+      });
+    }
+  });
+
+  window._qaErrors = errors;
+
+  // 콘솔 출력
+  if(errors.length){
+    console.group('[도면 QA 전수조사] 오류 '+errors.length+'건 / 총 '+walls.length+'개 벽');
+    var typeOrder=['gap_right','gap_top','overlap','dup_code','invalid_size','board_on_opening'];
+    typeOrder.forEach(function(t){
+      var grp=errors.filter(function(e){return e.type===t;});
+      if(!grp.length) return;
+      var label={gap_right:'우측 공백',gap_top:'상단 공백',overlap:'보드 겹침',
+                 dup_code:'데이터 중복',invalid_size:'크기 오류',board_on_opening:'타공 누락'}[t]||t;
+      console.group('['+label+'] '+grp.length+'건');
+      grp.forEach(function(e){ console.error(e.wall+': '+e.msg); });
+      console.groupEnd();
+    });
+    console.groupEnd();
+  } else {
+    console.log('[도면 QA] 전수조사 완료 — 오류 없음 ('+walls.length+'개 벽)');
+  }
+
+  _showQaBanner(errors, walls.length);
+  return errors;
+}
+
+function _showQaBanner(errors, total){
+  var old=document.getElementById('qaBanner');
+  if(old) old.remove();
+  var old2=document.getElementById('qaDetail');
+  if(old2) old2.remove();
+  if(!errors.length) return;
+
+  var byType={};
+  errors.forEach(function(e){ byType[e.type]=(byType[e.type]||0)+1; });
+  var typeLabels={gap_right:'우측 공백',gap_top:'상단 공백',overlap:'보드 겹침',
+                  dup_code:'데이터 중복',invalid_size:'크기 오류',board_on_opening:'타공 누락'};
+  var summary=Object.keys(byType).map(function(t){
+    return (typeLabels[t]||t)+' '+byType[t]+'건';
+  }).join(' · ');
+
+  var banner=document.createElement('div');
+  banner.id='qaBanner';
+  banner.style.cssText='position:fixed;top:46px;left:0;right:0;z-index:9000;'
+    +'background:rgba(24,6,6,0.97);border-bottom:2px solid #F04848;'
+    +'padding:5px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+  banner.innerHTML=
+    '<span style="color:#F04848;font-weight:700;font-size:11px">⚠️ 시공 도면 오류 발견</span>'
+    +'<span style="color:#F08080;font-size:10px">'+errors.length+'건 / '+total+'개 벽 — '+summary+'</span>'
+    +'<button onclick="document.getElementById(\'qaDetail\').style.display=document.getElementById(\'qaDetail\').style.display===\'none\'?\'\':\'none\'" '
+    +'style="background:rgba(240,72,72,.18);color:#F04848;border:1px solid rgba(240,72,72,.4);'
+    +'padding:2px 8px;border-radius:3px;font-size:9px;cursor:pointer">상세보기</button>'
+    +'<button onclick="this.parentNode.remove()" style="margin-left:auto;background:transparent;'
+    +'color:#5A7A9A;border:none;cursor:pointer;font-size:14px">✕</button>';
+
+  var detail=document.createElement('div');
+  detail.id='qaDetail';
+  detail.style.cssText='display:none;position:fixed;top:78px;left:0;right:0;z-index:8999;'
+    +'background:rgba(12,16,26,0.98);border-bottom:2px solid rgba(240,72,72,.35);'
+    +'max-height:220px;overflow-y:auto;padding:6px 14px';
+  var rows='';
+  errors.slice(0,80).forEach(function(e){
+    rows+='<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05);'
+      +'font-size:10px;font-family:monospace;display:flex;gap:8px">'
+      +'<span style="color:#F04848;min-width:70px">['+( typeLabels[e.type]||e.type)+']</span>'
+      +'<span style="color:#C8D8EC;font-weight:600;min-width:80px">'+e.wall+'</span>'
+      +'<span style="color:#5A7A9A">'+e.msg+'</span></div>';
+  });
+  if(errors.length>80) rows+='<div style="color:#5A7A9A;font-size:9px;padding:4px 0">... 외 '+(errors.length-80)+'건</div>';
+  detail.innerHTML=rows;
+
+  document.body.appendChild(banner);
+  document.body.appendChild(detail);
+}
+
 // ━━━ 내보내기 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ━━━ 측정 메저 동적 계산 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 자재·겹수 조합의 EXE 사전계산 결과 맵 반환 (없으면 빈 객체)
+function pcForConfig(mat,ply){
+  var m=(mat==='ply')?'ply':'gyp';
+  var p=(ply===2)?2:1;
+  if(typeof PRECOMPUTED_ALL!=='undefined'&&PRECOMPUTED_ALL){
+    return PRECOMPUTED_ALL[m+p]||{};
+  }
+  // 단일 PRECOMPUTED 폴백 (구버전 EXE 호환)
+  if(typeof PRECOMPUTED!=='undefined'&&PRECOMPUTED){
+    var k=Object.keys(PRECOMPUTED);
+    if(k.length&&((PRECOMPUTED[k[0]].bw>=1220?'ply':'gyp')===m)) return PRECOMPUTED;
+  }
+  return {};
+}
 // 보드 발주 원칙 (유저 확인):
 //  온장   → 1장 그대로
 //  직선절단 → 발주는 900×1800(또는 1220×2440) 1장, 잘라서 사용
@@ -1834,10 +2041,8 @@ function calcMeasureStats(mat){
   var sumGrossArea=0, sumNetArea=0;
   var nF=0, nE=0, nN=0, nR=0, ourBoards=0;
   var legA=0; // 기본방식: 벽마다 ceil(길이/bw)×ceil(높이/bh)
-  // 파이썬 최적화 결과(PRECOMPUTED)가 현재 자재와 일치하면 권위값으로 사용 (이중계산 방지)
-  var pcKeys=(typeof PRECOMPUTED!=='undefined'&&PRECOMPUTED)?Object.keys(PRECOMPUTED):[];
-  var pcMat=pcKeys.length?(PRECOMPUTED[pcKeys[0]].bw>=1220?'ply':'gyp'):null;
-  var usePC=(pcMat===mat);
+  var pcMap=pcForConfig(mat,G.ply||1);
+  var usePC=Object.keys(pcMap).length>0;
   IFC.forEach(function(w){
     if(!w||w.length<300||w.height<300) return;
     if(EXCLUDED_STOREYS[w.storey]) return; // GL/RF 제외
@@ -1846,8 +2051,8 @@ function calcMeasureStats(mat){
     sumGrossArea+=gA;
     sumNetArea+=Math.max(0,gA-opA);
     legA+=Math.ceil(w.length/bw)*Math.ceil(w.height/bh);
-    if(usePC && PRECOMPUTED[w.wall_id]){
-      var pc=PRECOMPUTED[w.wall_id];
+    if(usePC && pcMap[w.wall_id]){
+      var pc=pcMap[w.wall_id];
       nF+=pc.nF; nE+=pc.nE; nN+=pc.nN; nR+=(pc.nR||0); ourBoards+=pc.tot;
     } else {
       placeGrid(w.length,w.height,w.openings||[],bw,bh,0).forEach(function(c){
