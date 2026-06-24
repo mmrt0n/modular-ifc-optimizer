@@ -181,18 +181,46 @@ def _seam_positions_center_sym(x_start: float, x_end: float,
     return sorted(seams)
 
 
-def _columns_center_sym(x_start: float, x_end: float,
-                         cx: float, layer_offset: int = 0) -> list:
-    seams = _seam_positions_center_sym(x_start, x_end, cx, layer_offset)
-    cols = []
-    for i in range(len(seams) - 1):
-        x = seams[i]
-        w = round(seams[i + 1] - seams[i], 1)
-        if w < 0.5:
-            continue
-        t = 'full' if abs(w - BW) < 0.5 else 'cut'
-        cols.append((t, x, w))
-    return cols
+# ─────────────────────────────────────────
+# [M3 STEP3] 슬리버(끝칸 자투리) 보정
+# ─────────────────────────────────────────
+def _fix_thin_edge_columns(cols, min_col=300):
+    """
+    벽 양 끝(첫/마지막) 비개구부 열이 min_col(300mm) 미만이면 인접 열에서
+    폭을 빌려 min_col을 확보한다. 인접 열은 줄어들기만 하므로 모든 열이
+    표준규격(≤BW)을 유지한다. 인접 열과 경계를 공유하지 않거나(개구부 사이)
+    빌릴 폭이 부족하면 그대로 둔다. — 베이스 정리본 STEP3 반영.
+    """
+    if len(cols) < 2:
+        return cols
+    cols = [list(c) for c in cols]
+    nidx = [i for i, c in enumerate(cols) if c[0] != 'opening']
+    if len(nidx) < 2:
+        return [tuple(c) for c in cols]
+
+    def _borrow(thin_i, donor_i):
+        _, x, w = cols[thin_i]
+        _, dx, dw = cols[donor_i]
+        adjacent = abs((x + w) - dx) < 0.5 or abs((dx + dw) - x) < 0.5
+        if not adjacent:
+            return
+        need = round(min_col - w, 1)
+        if dw - need <= 0.5:
+            return
+        if dx < x:   # donor 왼쪽 → thin은 마지막 열
+            cols[donor_i][2] = round(dw - need, 1)
+            cols[thin_i][1] = round(x - need, 1)
+            cols[thin_i][2] = min_col
+        else:        # donor 오른쪽 → thin은 첫 열
+            cols[thin_i][2] = min_col
+            cols[donor_i][1] = round(dx + need, 1)
+            cols[donor_i][2] = round(dw - need, 1)
+
+    if cols[nidx[0]][2] < min_col:
+        _borrow(nidx[0], nidx[1])
+    if cols[nidx[-1]][2] < min_col:
+        _borrow(nidx[-1], nidx[-2])
+    return [tuple(c) for c in cols]
 
 
 # ─────────────────────────────────────────
@@ -211,7 +239,7 @@ def build_column_plan(L: float, ow: float, ox: float,
     opening_end = ox + ow
 
     if ow == 0:
-        cols = _columns_rtl(0, L, offset)
+        cols = _fix_thin_edge_columns(_columns_rtl(0, L, offset))
         return cols, 'RTL'
 
     # ── Case RTL: 벽 전체 폭으로 그리드 생성 후 개구부 구간 마스킹 ──────────────────────
@@ -273,6 +301,9 @@ def build_column_plan(L: float, ow: float, ox: float,
             t = 'full' if abs(w - BW) < 0.5 else 'cut'
             cols_sym_raw.append((t, x, w))
     cols_sym = cols_sym_raw
+
+    cols_rtl = _fix_thin_edge_columns(cols_rtl)
+    cols_sym = _fix_thin_edge_columns(cols_sym)
 
     loss_rtl = _col_waste_rate(cols_rtl)
     loss_sym = _col_waste_rate(cols_sym)
@@ -442,12 +473,15 @@ def _process_cell(col_w, col_x, row_h, row_y, col_t, row_t,
         return {'layer': layer, 'x': col_x, 'y': row_y, 'w': col_w, 'h': row_h, 'type': 'reuse'}
 
     stat['boards'] += 1
+    # 오프컷 = 표준보드(BW×BH) − 사용(col_w×row_h) = L자.
+    # 길로틴 분할: 측면 전체높이 스트립(off_w×BH) + 상단 스트립(col_w×off_h).
+    # (기존엔 측면 높이를 row_h로 잡아 off_w×(BH−row_h) 면적이 누락됐었음)
     off_w = round(BW - col_w, 1)
     if off_w > 0.5:
-        if pool.add({'w': off_w, 'h': row_h}, space_id, floor_id):
+        if pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
             stat['reuse_out'] += 1
         else:
-            stat['waste_mm2'] += off_w * row_h
+            stat['waste_mm2'] += off_w * BH
 
     off_h = round(BH - row_h, 1)
     if off_h > 0.5:
@@ -1143,7 +1177,7 @@ def make_opt_html(results: list, total_loss: float,
 <div class="summary">
   <div class="card"><div class="val">{len(results)}</div><div class="lbl">처리 벽 수</div></div>
   <div class="card"><div class="val">{total_boards}</div><div class="lbl">총 사용 온장 (장)</div></div>
-  <div class="card ok"><div class="val">{total_reuse}</div><div class="lbl">자투리 재사용 (장)</div></div>
+  <div class="card ok"><div class="val">{total_reuse}</div><div class="lbl">재사용 = 발주 절감 (장)<br><span style="font-size:10px;opacity:.7">신규 대비 {(total_reuse/(total_boards+total_reuse)*100) if (total_boards+total_reuse)>0 else 0:.1f}% 절감</span></div></div>
   <div class="card {'bad' if total_loss>10 else ('warn' if total_loss>5 else 'ok')}">
     <div class="val">{total_loss:.2f}%</div><div class="lbl">전체 로스율</div></div>
   <div class="card warn"><div class="val">{total_waste_m2:.2f}</div><div class="lbl">폐기량 (㎡)</div></div>

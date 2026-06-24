@@ -848,8 +848,7 @@ function placeGrid(W,H,ops,bw,bh,off){
     if(by2<=by1) continue;
     // 이음매 교차: 짝수 행과 홀수 행의 X 그리드를 bw/2 엇갈리게 (2P가 아닌 1P에서도 행간 엇갈림 적용)
     // 단, 2P에서는 이미 off로 처리되므로 1P에서만 적용
-    var rowXB = xB; // 기본: 엇갈림 없음 (M3 확인 후 활성화 가능)
-    // var rowXB = (ri%2===1) ? fixLastThin(calcXBreaks(W,ops,bw,(off||0)+Math.floor(bw/2))) : xB;
+    var rowXB = xB; // 행간 엇갈림 없음 (M3 확인기준)
     for(var xi=0;xi<rowXB.length-1;xi++){
       var bx1=rowXB[xi], bx2=rowXB[xi+1];
       if(bx2<=bx1) continue;
@@ -887,29 +886,6 @@ function score(cells){
   // 점수: 온장 적을수록 좋음(현장에서 온장=빠름), 단 총 보드수도 고려
   return active.length * 1000 - nF;  // 총 수 최소 우선, 같으면 온장 많은 쪽
 }
-
-// ━━━ 최적 배치 탐색 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 지금 시스템: bW=900 or 1800, 시작점=개구부끝 or 왼쪽하단 (고정)
-// 최적 탐색: x 오프셋(0~bW, 50mm 간격) + bW(450/600/900/1200/1800) 조합 전수 탐색
-// → 총 보드 수가 가장 적은 조합 채택
-
-function tryConfig(W,H,ops,bw,bh,off){
-  // off = 그리드 시작 x 오프셋
-  var cells=placeGrid(W,H,ops,bw,bh,off);
-  var tot=score(cells);
-  var nF=cells.filter(function(c){return c.type==='full';}).length;
-  var nE=cells.filter(function(c){return c.type==='edge_cut';}).length;
-  var nN=cells.filter(function(c){return c.type==='notch';}).length;
-  var gu=tot*bw*bh;
-  var st=cells.reduce(function(s,c){return s+c.solid;},0);
-  var lr=gu>0?(gu-st)/gu:0;
-  // 비용: 보드 수 최소화 우선, 그 다음 로스율
-  var cost=tot*100+lr;
-  return {cost:cost,tot:tot,nF:nF,nE:nE,nN:nN,lr:lr,cells:cells,bw:bw,bh:bh,off:off};
-}
-
-
-
 
 // ━━━ 실행 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function run(){
@@ -1704,6 +1680,13 @@ function sortProjectWalls(arr){
 
 function runProjectMode(){
   if(PROJ.running) return;
+  // 파이썬 최적화 결과(PRECOMPUTED)가 현재 자재와 일치하면 그것을 권위값으로 집계
+  // (JS 엔진은 full 셀 재사용을 시도하지 않아 파이썬보다 재사용이 과소집계됨)
+  var pcKeys=(typeof PRECOMPUTED!=='undefined'&&PRECOMPUTED)?Object.keys(PRECOMPUTED):[];
+  if(pcKeys.length){
+    var pcMat=PRECOMPUTED[pcKeys[0]].bw>=1220?'ply':'gyp';
+    if(pcMat===G.mat){ runProjectModePC(); return; }
+  }
   PROJ.running=true; PROJ.results=[]; PROJ.log=[];
   document.getElementById('projPanel').style.display='';
   document.getElementById('projStatus').textContent='계산 중...';
@@ -1753,6 +1736,32 @@ function runProjectMode(){
     if(idx<total){ setTimeout(chunk,8); } else { PROJ.running=false; showProjResults(mk,BW,BH,PAL); }
   }
   chunk();
+}
+
+// 파이썬 PRECOMPUTED 기반 프로젝트 집계 (권위값 — 실제 EXE 재사용 반영)
+function runProjectModePC(){
+  PROJ.running=true; PROJ.results=[]; PROJ.log=[];
+  document.getElementById('projPanel').style.display='';
+  document.getElementById('projStatus').textContent='계산 중... (Python 결과)';
+  var mk=+document.getElementById('markup').value/100;
+  var BW=G.mat==='ply'?1220:900;
+  var BH=G.mat==='ply'?2440:1800;
+  var PAL=G.mat==='ply'?100:990;
+  PROJ.wallSeq=sortProjectWalls(IFC);
+  PROJ.wallSeq.forEach(function(w,i){
+    var pc=PRECOMPUTED[w.wall_id];
+    if(!pc) return;
+    var oa=(w.openings||[]).reduce(function(s,o){return s+o.width*o.height;},0);
+    var net=(w.length*w.height-oa)/1e6;
+    PROJ.results.push({wall:w,label:projLabel(w),seq:i+1,
+      cells:pc.cells_L1||[],orient:'세로',
+      nF:pc.nF,nE:pc.nE,nN:pc.nN,nReuse:pc.nR||0,
+      tot:pc.tot,cutCount:(pc.nE||0)+(pc.nN||0),lr:pc.lr||0,net:net,
+      gs:Math.ceil(pc.tot*(1+mk))});
+  });
+  document.getElementById('projBar').style.width='100%';
+  PROJ.running=false;
+  showProjResults(mk,BW,BH,PAL);
 }
 
 function showProjResults(mk,BW,BH,PAL){
@@ -1823,8 +1832,12 @@ function calcMeasureStats(mat){
   var palQty=mat==='ply'?100:990; // 석고보드 990매, 합판 100매/팔레트
   var boardArea=bw*bh;
   var sumGrossArea=0, sumNetArea=0;
-  var nF=0, nE=0, nN=0;
+  var nF=0, nE=0, nN=0, nR=0, ourBoards=0;
   var legA=0; // 기본방식: 벽마다 ceil(길이/bw)×ceil(높이/bh)
+  // 파이썬 최적화 결과(PRECOMPUTED)가 현재 자재와 일치하면 권위값으로 사용 (이중계산 방지)
+  var pcKeys=(typeof PRECOMPUTED!=='undefined'&&PRECOMPUTED)?Object.keys(PRECOMPUTED):[];
+  var pcMat=pcKeys.length?(PRECOMPUTED[pcKeys[0]].bw>=1220?'ply':'gyp'):null;
+  var usePC=(pcMat===mat);
   IFC.forEach(function(w){
     if(!w||w.length<300||w.height<300) return;
     if(EXCLUDED_STOREYS[w.storey]) return; // GL/RF 제외
@@ -1833,14 +1846,23 @@ function calcMeasureStats(mat){
     sumGrossArea+=gA;
     sumNetArea+=Math.max(0,gA-opA);
     legA+=Math.ceil(w.length/bw)*Math.ceil(w.height/bh);
-    placeGrid(w.length,w.height,w.openings||[],bw,bh,0).forEach(function(c){
-      if(c.type==='full') nF++;
-      else if(c.type==='edge_cut') nE++;
-      else if(c.type==='notch') nN++;
-    });
+    if(usePC && PRECOMPUTED[w.wall_id]){
+      var pc=PRECOMPUTED[w.wall_id];
+      nF+=pc.nF; nE+=pc.nE; nN+=pc.nN; nR+=(pc.nR||0); ourBoards+=pc.tot;
+    } else {
+      placeGrid(w.length,w.height,w.openings||[],bw,bh,0).forEach(function(c){
+        if(c.type==='full') nF++;
+        else if(c.type==='edge_cut') nE++;
+        else if(c.type==='notch') nN++;
+        else return;
+        ourBoards++;
+      });
+    }
   });
   var legB=Math.ceil(sumNetArea/boardArea);
-  var our=nF+nE+nN;
+  // PC(파이썬 tot)는 겹수 합계 → 기본방식도 같은 겹수 기준으로 맞춰 비교 (2P 정합)
+  if(usePC){ var _ply=G.ply||1; legA*=_ply; legB*=_ply; }
+  var our=usePC?ourBoards:(nF+nE+nN);
   var legAgs=Math.ceil(legA*(1+mk));
   var legBgs=Math.ceil(legB*(1+mk));
   var ourGs=Math.ceil(our*(1+mk));
@@ -1849,8 +1871,9 @@ function calcMeasureStats(mat){
   var lossOur=our>0?((our*boardArea-sumNetArea)/(our*boardArea)*100):0;
   var f=function(n){return Math.round(n).toLocaleString();};
   return {
-    bw:bw,bh:bh,palQty:palQty,mk:Math.round(mk*100),
+    bw:bw,bh:bh,palQty:palQty,mk:Math.round(mk*100),src:usePC?'python':'js',
     netArea:(sumNetArea/1e6).toFixed(1),
+    reuse:nR,
     legA:{tot:f(legA),gs:f(legAgs),loss:lossA.toFixed(1),pal:Math.ceil(legAgs/palQty)},
     legB:{tot:f(legB),gs:f(legBgs),loss:lossB.toFixed(1),pal:Math.ceil(legBgs/palQty)},
     our:{tot:f(our),nF:f(nF),nE:f(nE),nN:f(nN),gs:f(ourGs),loss:lossOur.toFixed(1),pal:Math.ceil(ourGs/palQty)}
@@ -1869,6 +1892,7 @@ function buildMeasureRows(d){
     ['발주 — 할증 8%', f(base*1.08)+'장', f(tot*1.08)+'장'],
     ['전체 로스율', d.legA.loss+'%', '<span style="color:#ECBA30">'+d.our.loss+'%</span>'],
     ['개구부 반영', '<span style="color:#F04848">❌ 미반영</span>', '<span style="color:#26BE78">✅ 위치·크기</span>'],
+    ['재사용 절감', '<span style="color:#F04848">❌ 없음</span>', (d.reuse>0?'<span style="color:#26BE78">♻ '+d.reuse.toLocaleString()+'장 재활용</span>':'<span style="color:#6B7280">0장</span>')],
     ['파레트 수 ('+d.palQty+'매 기준)', d.legA.pal+'팔레트', d.our.pal+'팔레트']
   ];
   return rows.map(function(r,i){
