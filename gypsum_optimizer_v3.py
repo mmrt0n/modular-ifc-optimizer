@@ -214,12 +214,33 @@ def build_column_plan(L: float, ow: float, ox: float,
         cols = _columns_rtl(0, L, offset)
         return cols, 'RTL'
 
-    # ── Case RTL: 끝부터 배치 ──────────────────────
-    cols_rtl = (
-        _columns_rtl(0, ox, offset) +
-        [('opening', ox, ow)] +
-        _columns_rtl(opening_end, L - opening_end, offset)
-    )
+    # ── Case RTL: 벽 전체 폭으로 그리드 생성 후 개구부 구간 마스킹 ──────────────────────
+    # (분리 RTL은 개구부 오른쪽 자투리가 개구부 옆에 붙는 문제 발생)
+    seams_rtl = _seam_positions_rtl(0, L, offset)
+    cols_rtl = []
+    for i in range(len(seams_rtl) - 1):
+        x = seams_rtl[i]
+        w = round(seams_rtl[i + 1] - seams_rtl[i], 1)
+        if w < 0.5:
+            continue
+        if x >= ox and x + w <= opening_end:
+            cols_rtl.append(('opening', x, w))
+        elif x < ox and x + w > ox:
+            left_w = round(ox - x, 1)
+            if left_w > 0.5:
+                t = 'full' if abs(left_w - BW) < 0.5 else 'cut'
+                cols_rtl.append((t, x, left_w))
+            cols_rtl.append(('opening', ox, min(ow, w - left_w)))
+        elif x < opening_end and x + w > opening_end:
+            cols_rtl.append(('opening', x, round(opening_end - x, 1)))
+            right_x = opening_end
+            right_w = round(x + w - opening_end, 1)
+            if right_w > 0.5:
+                t = 'full' if abs(right_w - BW) < 0.5 else 'cut'
+                cols_rtl.append((t, right_x, right_w))
+        else:
+            t = 'full' if abs(w - BW) < 0.5 else 'cut'
+            cols_rtl.append((t, x, w))
 
     # ── Case SYM: 개구부 중심 대칭 ─────────────────
     cx = ox + ow / 2
