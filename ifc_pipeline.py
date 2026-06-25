@@ -272,9 +272,8 @@ class ProgressWindow:
         "④ 검증 체크 실행",
         "⑤ 교차검증 비교",
         "⑥ 검증 보고서 HTML 생성",
-        "⑦ 석고보드 최적화 계산",
+        "⑦ 절단 최적화 계산",
         "⑧ 최적화 결과 HTML 생성",
-        "⑨ 시뮬레이터 UI 생성",
         "✅ 완료 — 브라우저 오픈",
     ]
 
@@ -483,34 +482,18 @@ def main():
             f.write(html_txt)
         print(f"✓ 검증 HTML 저장: {verify_html}")
 
-        # ── STEP 7: 최적화 계산 (석고1P·2P / 합판1P·2P 4조합) ──
+        # ── STEP 7: 최적화 계산 ───────────────────────
         opt_walls = _walls_for_optimizer(data['walls'])
         if not opt_walls:
             raise RuntimeError(
                 "최적화 가능한 벽이 없습니다 (모든 벽의 치수 추출 실패).")
 
-        _BASE = [('gyp1', 900, 1800), ('ply1', 1220, 2440)]
-        default_key = 'ply1' if mat == '합판' else 'gyp1'
-
-        # M3 표준: 세로(종방향) 고정 — bw=표준폭, bh=표준높이 그대로 사용
-        prog.step(6, (f"{len(opt_walls)}개 벽 × {len(_BASE)}회 계산 중 — "
-                      f"방향:세로  재사용={'활성' if reuse else '비활성'}"))
-        all_opt_results = {}
-        results = []
-        total_loss = 0.0
-
-        for cfg_key, bw_base, bh_base in _BASE:
-            opt.IS_2P = False
-            opt.BW, opt.BH = bw_base, bh_base
-            r, loss = opt.optimize_building(opt_walls)
-            all_opt_results[cfg_key] = r
-            if cfg_key == default_key:
-                results, total_loss = r, loss
-
-        # globals 복원
-        opt.BW = 1220 if mat == '합판' else 900
-        opt.BH = 2440 if mat == '합판' else 1800
         opt.IS_2P = False
+        opt.BW, opt.BH = (1220, 2440) if mat == '합판' else (900, 1800)
+
+        prog.step(6, (f"{len(opt_walls)}개 벽 계산 중 — "
+                      f"자재:{mat}  방향:세로  재사용={'활성' if reuse else '비활성'}"))
+        results, total_loss = opt.optimize_building(opt_walls)
 
         # ── STEP 8: 최적화 HTML 생성 ──────────────────
         prog.step(7, f"전체 로스율 {total_loss:.2f}% / "
@@ -523,40 +506,10 @@ def main():
             f.write(opt_txt)
         print(f"✓ 최적화 HTML 저장: {opt_html}")
 
-        # ── STEP 9: 시뮬레이터 UI HTML 생성 ──────────
-        sim_html = None
-        prog.step(8, f"벽 {len(data['walls'])}개 UI 데이터 주입 중 (2조합: 석고보드·합판 1P)...")
-        try:
-            tmpl = _simulator_template_path()
-            sim_walls = verifier.export_simulator_walls(data['walls'])
-            # opt_walls와 wall_id 일치: 같은 중복제거 적용
-            _seen2: dict = {}
-            for _sw in sim_walls:
-                _base = _sw['wall_id']
-                if _base in _seen2:
-                    _seen2[_base] += 1
-                    _sw['wall_id'] = f"{_base}_{_seen2[_base]}"
-                else:
-                    _seen2[_base] = 1
-            sim_txt   = opt.make_simulator_html(
-                sim_walls, ifc_name, tmpl,
-                opt_results_all=all_opt_results,
-                default_key=default_key)
-            sim_html  = base + "_시뮬레이터.html"
-            with open(sim_html, "w", encoding="utf-8") as f:
-                f.write(sim_txt)
-            print(f"✓ 시뮬레이터 HTML 저장: {sim_html}")
-        except Exception as e_sim:
-            print(f"  ⚠ 시뮬레이터 UI 생성 실패 (계속 진행): {e_sim}")
-
-        # ── STEP 10: 브라우저 오픈 ────────────────────
-        prog.step(9, "브라우저에서 결과를 확인하세요...")
-        # new=2: 각 파일을 새 탭으로 열어 file:// cross-origin 경고 방지
+        # ── STEP 9: 브라우저 오픈 ────────────────────
+        prog.step(8, "브라우저에서 결과를 확인하세요...")
         webbrowser.open(verify_html, new=2)
-        if sim_html:
-            webbrowser.open(sim_html, new=2)
-        else:
-            webbrowser.open(opt_html, new=2)
+        webbrowser.open(opt_html, new=2)
         prog.done()
 
     except Exception as e:
@@ -598,10 +551,6 @@ def main():
     tk.Label(fnames, text=f"📄 검증보고서:  {os.path.basename(verify_html)}",
              font=("맑은 고딕", 9), bg="#fff", fg="#1565c0",
              anchor="w", padx=10, pady=6).pack(fill="x")
-    if sim_html:
-        tk.Label(fnames, text=f"🏗 시뮬레이터:  {os.path.basename(sim_html)}",
-                 font=("맑은 고딕", 9), bg="#fff", fg="#2e7d32",
-                 anchor="w", padx=10, pady=6).pack(fill="x")
     tk.Label(fnames, text=f"📊 최적화결과:  {os.path.basename(opt_html)}",
              font=("맑은 고딕", 9), bg="#fff", fg="#6a1b9a",
              anchor="w", padx=10, pady=6).pack(fill="x")
