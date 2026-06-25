@@ -221,6 +221,25 @@ def _fix_thin_edge_columns(cols, min_col=300):
         _borrow(nidx[0], nidx[1])
     if cols[nidx[-1]][2] < min_col:
         _borrow(nidx[-1], nidx[-2])
+
+    # 개구부 바로 옆 얇은 열도 보정 (중간 열)
+    for ni, idx in enumerate(nidx):
+        if ni in (0, len(nidx) - 1):
+            continue
+        if cols[idx][2] >= min_col:
+            continue
+        adj_opening = (
+            (idx > 0 and cols[idx - 1][0] == 'opening') or
+            (idx + 1 < len(cols) and cols[idx + 1][0] == 'opening')
+        )
+        if not adj_opening:
+            continue
+        # 왼쪽 비개구부 이웃 먼저 시도, 안 되면 오른쪽
+        if ni > 0:
+            _borrow(idx, nidx[ni - 1])
+        if cols[idx][2] < min_col and ni + 1 < len(nidx):
+            _borrow(idx, nidx[ni + 1])
+
     return [tuple(c) for c in cols]
 
 
@@ -420,6 +439,68 @@ def calc_plywood_zones(L: float, H: float,
 # ─────────────────────────────────────────
 # 셀 처리 (v2와 동일)
 # ─────────────────────────────────────────
+def _process_cell_pair(col_w, col_x, h1, y1, h2, y2,
+                       layer, space_id, floor_id, pool, stat):
+    """개구부 아래(h1) + 위(h2) 보드를 원판 1장에서 재단.
+    h1+h2 <= BH 인 경우에만 호출. 재사용 풀을 먼저 확인하고,
+    둘 다 신규라면 보드 1장으로 낭비 계산. 반환: placement dict 리스트."""
+    out = []
+    found1, lf1 = pool.consume(col_w, h1, space_id, floor_id)
+    found2, lf2 = pool.consume(col_w, h2, space_id, floor_id)
+
+    if found1:
+        stat['reuse_in'] += 1
+        for lf in lf1:
+            if pool.add(lf, space_id, floor_id): stat['reuse_out'] += 1
+        out.append({'layer': layer, 'x': col_x, 'y': y1, 'w': col_w, 'h': h1, 'type': 'reuse'})
+    if found2:
+        stat['reuse_in'] += 1
+        for lf in lf2:
+            if pool.add(lf, space_id, floor_id): stat['reuse_out'] += 1
+        out.append({'layer': layer, 'x': col_x, 'y': y2, 'w': col_w, 'h': h2, 'type': 'reuse'})
+
+    need_new1 = not found1
+    need_new2 = not found2
+
+    if need_new1 and need_new2:
+        # 둘 다 신규 → 원판 1장으로 처리
+        stat['boards'] += 1
+        off_w = round(BW - col_w, 1)
+        if off_w > 0.5:
+            if not pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
+                stat['waste_mm2'] += off_w * BH
+        off_h = round(BH - h1 - h2, 1)
+        if off_h > 0.5:
+            if not pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
+                stat['waste_mm2'] += col_w * off_h
+        out.append({'layer': layer, 'x': col_x, 'y': y1, 'w': col_w, 'h': h1, 'type': 'cut_op'})
+        out.append({'layer': layer, 'x': col_x, 'y': y2, 'w': col_w, 'h': h2, 'type': 'cut_op'})
+    elif need_new1:
+        stat['boards'] += 1
+        off_w = round(BW - col_w, 1)
+        if off_w > 0.5:
+            if not pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
+                stat['waste_mm2'] += off_w * BH
+        off_h = round(BH - h1, 1)
+        if off_h > 0.5:
+            if not pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
+                stat['waste_mm2'] += col_w * off_h
+        out.append({'layer': layer, 'x': col_x, 'y': y1, 'w': col_w, 'h': h1, 'type': 'cut_op'})
+    elif need_new2:
+        stat['boards'] += 1
+        off_w = round(BW - col_w, 1)
+        if off_w > 0.5:
+            if not pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
+                stat['waste_mm2'] += off_w * BH
+        off_h = round(BH - h2, 1)
+        if off_h > 0.5:
+            if not pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
+                stat['waste_mm2'] += col_w * off_h
+        out.append({'layer': layer, 'x': col_x, 'y': y2, 'w': col_w, 'h': h2, 'type': 'cut_op'})
+
+    return out
+
+
 def _process_cell(col_w, col_x, row_h, row_y, col_t, row_t,
                   layer, space_id, floor_id, pool, stat):
     is_full = (abs(col_w - BW) < 0.5 and abs(row_h - BH) < 0.5)
@@ -540,10 +621,30 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
                 # 개구부 폭이 BW보다 넓으면 위/아래 보드도 표준폭으로 분할
                 sub_cols = _split_span(col_x, col_w)
 
-                # 개구부 아래 보드 (예: 창문 아래 벽) — 'cut_op' 타입으로 별도 색상
-                if op_oy_actual > 0.5:
-                    for sx, sw in sub_cols:
-                        for row_t, row_y, row_h in _rows_in_region(0, op_oy_actual):
+                above_h = H - op_top
+                below_rows = _rows_in_region(0, op_oy_actual) if op_oy_actual > 0.5 else []
+                above_rows = _rows_in_region(op_top, above_h) if above_h > 0.5 else []
+
+                for sx, sw in sub_cols:
+                    # 아래+위 각 1행씩이고 합이 BH 이하 → 원판 1장 페어링
+                    if (len(below_rows) == 1 and len(above_rows) == 1 and
+                            below_rows[0][2] + above_rows[0][2] <= BH):
+                        _, by, bh = below_rows[0]
+                        _, ay, ah = above_rows[0]
+                        for p in _process_cell_pair(sw, sx, bh, by, ah, ay,
+                                                    layer, space_id, floor_id, pool, stat):
+                            placements.append(p)
+                    else:
+                        # 개구부 아래 보드
+                        for row_t, row_y, row_h in below_rows:
+                            p = _process_cell(sw, sx, row_h, row_y,
+                                              'cut', row_t, layer,
+                                              space_id, floor_id, pool, stat)
+                            if p:
+                                p['type'] = 'cut_op'
+                                placements.append(p)
+                        # 개구부 위 보드
+                        for row_t, row_y, row_h in above_rows:
                             p = _process_cell(sw, sx, row_h, row_y,
                                               'cut', row_t, layer,
                                               space_id, floor_id, pool, stat)
@@ -551,21 +652,9 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
                                 p['type'] = 'cut_op'
                                 placements.append(p)
 
-                # 개구부 마커 (실제 치수 — 전체 폭 하나로 표시)
+                # 개구부 마커
                 placements.append({'layer': layer, 'x': col_x, 'y': op_oy_actual,
                                    'w': col_w, 'h': op_oh_actual, 'type': 'opening'})
-
-                # 개구부 위 보드 (예: 문 위 벽) — 'cut_op' 타입으로 별도 색상
-                above_h = H - op_top
-                if above_h > 0.5:
-                    for sx, sw in sub_cols:
-                        for row_t, row_y, row_h in _rows_in_region(op_top, above_h):
-                            p = _process_cell(sw, sx, row_h, row_y,
-                                              'cut', row_t, layer,
-                                              space_id, floor_id, pool, stat)
-                            if p:
-                                p['type'] = 'cut_op'
-                                placements.append(p)
                 continue
 
             active_oh = active_oy = 0
