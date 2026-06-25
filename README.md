@@ -9,7 +9,7 @@
 
 | 파일 | 설명 |
 |------|------|
-| **[IFC최적화.exe](dist/IFC최적화.exe)** | Windows 64비트 실행 파일 (~75MB) |
+| **[IFC최적화_v5.exe](dist/IFC최적화_v5.exe)** | Windows 64비트 실행 파일 (~54MB) |
 
 > Python, Node.js 등 별도 설치 불필요 — EXE 하나로 실행 가능  
 > Windows 10/11 64비트 / Chrome·Edge 브라우저 권장
@@ -46,7 +46,7 @@
 
 ## 🚀 사용 방법
 
-1. `IFC최적화.exe` 실행
+1. `IFC최적화_v5.exe` 실행
 2. **자투리 재사용** 여부 선택 (활성 권장)
 3. **IFC 파일** 선택
 4. (선택) 교차검증 기준값 입력
@@ -86,8 +86,8 @@ python ifc_pipeline.py
 **EXE 재빌드**
 
 ```bash
-python -m PyInstaller IFC최적화.spec --clean --noconfirm
-# 결과물: dist/IFC최적화.exe
+python -m PyInstaller IFC최적화_v5.spec --clean --noconfirm
+# 결과물: dist/IFC최적화_v5.exe
 ```
 
 <br>
@@ -99,9 +99,9 @@ modular-ifc-optimizer/
 ├── ifc_pipeline.py          # 전체 파이프라인 오케스트레이터 (Tkinter 마법사)
 ├── ifc_verifier.py          # IFC 파싱 및 벽체 검증
 ├── gypsum_optimizer_v3.py   # 배치 최적화 엔진 + HTML 생성 (시뮬레이터 포함)
-├── IFC최적화.spec           # PyInstaller 빌드 설정
+├── IFC최적화_v5.spec        # PyInstaller 빌드 설정
 ├── dist/
-│   └── IFC최적화.exe        # 배포용 실행 파일
+│   └── IFC최적화_v5.exe     # 배포용 실행 파일
 └── docs/
     ├── IFC_원본_오류_사항.md
     └── images/
