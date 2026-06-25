@@ -735,6 +735,7 @@ def optimize_building(walls: list) -> tuple:
 # HTML 리포트 생성
 # ─────────────────────────────────────────
 SVG_MAX_BOARDS = 80  # 레이어당 보드 수 초과면 SVG 생략
+_svg_uid_seq = [0]   # 충돌 없는 고유 탭 컨테이너 ID 생성용
 
 
 def _plywood_svg(r: dict, scale_h: int = 210) -> str:
@@ -943,7 +944,8 @@ def _wall_svg(r: dict, scale_h: int = 210) -> str:
         reuse = sum(1 for p in lp if p.get('type') == 'reuse')
         return full, cut, reuse
 
-    uid = abs(hash((r.get('wall_id', ''), L, H))) % 9999999
+    _svg_uid_seq[0] += 1
+    uid = _svg_uid_seq[0]
 
     # 탭 목록 구성: Layer1, (Layer2), (합판보강)
     tabs = []
