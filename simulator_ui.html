@@ -729,13 +729,22 @@ function calcXBreaks(W, ops, bw, off){
       절단을 늘리는 문제 발생 → 순수 보드폭 그리드만 사용.
   */
   off = off||0;
-  // [M3 8-1] 끝(오른쪽)부터 배치 → 자투리(슬리버)가 왼쪽(시작점)에 위치
-  // Python 엔진(_seam_positions_rtl)과 동일한 RTL 방향
+  // Python build_column_plan과 방향 동기화:
+  //  · 개구부 있는 벽 [M3 9번]: 왼쪽 하단부터 온장(LTR) → 자투리가 오른쪽/개구부 쪽
+  //  · 개구부 없는 벽 [M3 8-1]: 오른쪽 끝부터(RTL)   → 자투리가 왼쪽(시작점)
   var b=[0,W];
-  var x = W - off;           // 오른쪽 끝(2P는 off만큼 안쪽)부터 시작
-  while(x>0){
-    if(x<W) b.push(x);
-    x -= bw;                 // bw 간격으로 왼쪽으로 이동
+  if(ops && ops.length){
+    var x = off;             // 왼쪽 끝(2P는 off만큼 안쪽)부터 오른쪽으로
+    while(x < W){
+      if(x>0) b.push(x);
+      x += bw;
+    }
+  } else {
+    var x = W - off;         // 오른쪽 끝부터 왼쪽으로
+    while(x>0){
+      if(x<W) b.push(x);
+      x -= bw;
+    }
   }
   // 순수 bw 간격 그리드 사용 — 개구부 경계 추가 없음
   // 이유: oLeft/oRight 추가시 550/350/945/1035mm 등 비표준 크기 보드 발생
@@ -828,9 +837,9 @@ function placeGrid(W,H,ops,bw,bh,off){
   var floorGap = (typeof FLOOR_GAP!=='undefined') ? FLOOR_GAP : 5; // 바닥 이격 mm
   var Heff = H - floorGap; // 유효 높이 (바닥 이격 제외)
 
-  // X축 그리드: [M3 8-1] RTL 배치 → 자투리는 왼쪽에 생김
-  // fixFirstThin으로 왼쪽 슬리버(300mm 미만) 보정. 오른쪽은 항상 정규격이라 보정 불필요.
-  var xB = fixFirstThin(calcXBreaks(W,ops,bw,off||0), MIN);
+  // X축 그리드: 개구부 있으면 LTR(자투리 오른쪽) → fixLastThin, 없으면 RTL(자투리 왼쪽) → fixFirstThin
+  var _brk = calcXBreaks(W,ops,bw,off||0);
+  var xB = (ops && ops.length) ? fixLastThin(_brk) : fixFirstThin(_brk, MIN);
 
   // Y축 행 계산 (바닥 이격 적용)
   var rows = Math.ceil(Heff/bh);

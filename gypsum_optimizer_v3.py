@@ -252,13 +252,14 @@ def build_column_plan(L: float, ops_xw: list,
     x방향 열 계획. 다중 개구부 지원.
 
     ops_xw: [(ox, ow), ...] — 개구부 x시작·폭 목록 (0개 이상)
-    배치 규칙:
-      · 왼쪽 끝 구역 : RTL → 자투리가 왼쪽 벽 가장자리
-      · 개구부 사이 구역: LTR → 자투리가 다음 개구부 쪽, 온장이 이전 개구부 오른쪽에 밀착
-      · 오른쪽 끝 구역: LTR → 자투리가 오른쪽 벽 가장자리
-    결과: 자투리가 양쪽 벽 가장자리에 위치, 개구부 사이 구역은 온장이 이전 개구부에 밀착
+    배치 규칙: [M3 9번] 개구부 있는 벽은 "왼쪽 하단부터 온장" → 전 구역 LTR.
+      · 왼쪽 끝 구역 : LTR → 온장이 왼쪽 벽 가장자리부터, 자투리가 개구부 쪽
+      · 개구부 사이 구역: LTR → 온장이 이전 개구부 오른쪽에 밀착, 자투리가 다음 개구부 쪽
+      · 오른쪽 끝 구역: LTR → 온장이 개구부 오른쪽부터, 자투리가 오른쪽 벽 가장자리
+    결과: 맨 왼쪽 모서리에 온장 배치, 자투리는 개구부 쪽·오른쪽 끝으로 밀림.
+    (개구부 없는 벽은 M3 8-1 기준 RTL 유지 — 위 분기 참조)
 
-    반환: (columns, 'RTLC')
+    반환: (columns, 'LTRC')
     """
     offset = STUD if (IS_2P and layer == 2) else 0
 
@@ -270,15 +271,11 @@ def build_column_plan(L: float, ops_xw: list,
     cols = []
     prev_end = 0.0
 
-    for i, (ox, ow) in enumerate(ops):
+    for ox, ow in ops:
         zone_w = ox - prev_end
         if zone_w > 0.5:
-            if i == 0:
-                # 왼쪽 끝 구역: RTL → 자투리가 왼쪽 벽 가장자리
-                cols += _columns_rtl(prev_end, zone_w, offset)
-            else:
-                # 개구부 사이 구역: LTR → 온장이 이전 개구부 오른쪽에 밀착, 자투리는 다음 개구부 쪽
-                cols += _columns_ltr(prev_end, zone_w, offset)
+            # [M3 9번] 왼쪽 끝 구역도 LTR → 맨 왼쪽 모서리에 온장, 자투리는 개구부 쪽
+            cols += _columns_ltr(prev_end, zone_w, offset)
         cols.append(('opening', round(ox, 1), round(ow, 1)))
         prev_end = ox + ow
 
@@ -288,7 +285,7 @@ def build_column_plan(L: float, ops_xw: list,
         cols += _columns_ltr(prev_end, right_w, offset)
 
     cols = _fix_thin_edge_columns(cols)
-    return cols, 'RTLC'
+    return cols, 'LTRC'
 
 
 def _col_waste_rate(cols: list) -> float:
