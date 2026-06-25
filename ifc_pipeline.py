@@ -80,7 +80,6 @@ def run_setup_wizard():
 
     reuse_var = tk.BooleanVar(value=state['reuse'])
     mat_var   = tk.StringVar(value=state['mat'])
-    dir_var   = tk.StringVar(value=state['direction'])
     srch_var  = tk.StringVar(value='0')
 
     def _radio_group(parent, title, color, var, options, r):
@@ -95,7 +94,7 @@ def run_setup_wizard():
                            ).pack(anchor="w", pady=1)
 
     tk.Label(tab_opt,
-             text="1P 시공 고정 · 자재/방향/할증률을 설정하세요. 시뮬레이터 HTML에서도 자재 전환 가능합니다.",
+             text="1P · 세로(종방향) 시공 고정 (M3 표준) · 자재/할증률을 설정하세요. 시뮬레이터 HTML에서도 자재 전환 가능합니다.",
              font=("맑은 고딕", 9), bg="#f0f4f8", fg="#546e7a"
              ).grid(row=0, column=0, sticky="w", pady=(0, 6))
 
@@ -104,17 +103,13 @@ def run_setup_wizard():
         ('석고보드', '석고보드  (900×1800mm)'),
         ('합판',     '합판  (1220×2440mm)'),
     ], 1)
-    _radio_group(tab_opt, "시공 방향", "#6a1b9a", dir_var, [
-        ('세로', '세로 (종방향) — 1800mm 방향을 세워서 시공'),
-        ('가로', '가로 (횡방향) — 1800mm 방향을 눕혀서 시공'),
-        ('자동', '자동 — 자재별 로스율 최소 방향 자동 선택'),
-    ], 2)
+    # 시공 방향: M3 표준 = 세로(종방향) 고정 (선택 UI 없음)
 
     # 할증률 입력
     srch_lf = tk.LabelFrame(tab_opt, text="  할증률 (%)  ",
                              font=("맑은 고딕", 9, "bold"),
                              bg="#f0f4f8", fg="#e65100", padx=10, pady=6)
-    srch_lf.grid(row=3, column=0, sticky="ew", pady=4)
+    srch_lf.grid(row=2, column=0, sticky="ew", pady=4)
     srch_inner = tk.Frame(srch_lf, bg="#f0f4f8")
     srch_inner.pack(anchor="w")
     tk.Entry(srch_inner, textvariable=srch_var, width=7,
@@ -127,7 +122,7 @@ def run_setup_wizard():
     _radio_group(tab_opt, "자투리 재사용", "#2e7d32", reuse_var, [
         (True,  "활성  (자투리 폭≥300mm, 높이≥450mm 재활용)"),
         (False, "비활성  (순수 신규 보드 수량만)"),
-    ], 4)
+    ], 3)
 
     # ───── 탭 2: IFC 파일 ─────
     tab_ifc = tk.Frame(nb, bg="#f0f4f8", padx=16, pady=14)
@@ -221,7 +216,7 @@ def run_setup_wizard():
 
         state['reuse']     = reuse_var.get()
         state['mat']       = mat_var.get()
-        state['direction'] = dir_var.get()
+        state['direction'] = '세로'   # M3 표준 = 세로(종방향) 고정
         try:
             state['surcharge'] = max(0.0, float(srch_var.get()))
         except ValueError:
@@ -497,40 +492,20 @@ def main():
         _BASE = [('gyp1', 900, 1800), ('ply1', 1220, 2440)]
         default_key = 'ply1' if mat == '합판' else 'gyp1'
 
-        n_iter = 2 * len(_BASE) if direction == '자동' else len(_BASE)
-        prog.step(6, (f"{len(opt_walls)}개 벽 × {n_iter}회 계산 중 — "
-                      f"방향:{direction}  재사용={'활성' if reuse else '비활성'}"))
+        # M3 표준: 세로(종방향) 고정 — bw=표준폭, bh=표준높이 그대로 사용
+        prog.step(6, (f"{len(opt_walls)}개 벽 × {len(_BASE)}회 계산 중 — "
+                      f"방향:세로  재사용={'활성' if reuse else '비활성'}"))
         all_opt_results = {}
         results = []
         total_loss = 0.0
-        chosen_dir = {}  # cfg_key → 실제 선택된 방향
 
         for cfg_key, bw_base, bh_base in _BASE:
             opt.IS_2P = False
-            if direction == '자동':
-                opt.BW, opt.BH = bw_base, bh_base
-                r_v, loss_v = opt.optimize_building(opt_walls)
-                opt.BW, opt.BH = bh_base, bw_base   # BW↔BH 교환 = 가로
-                r_h, loss_h = opt.optimize_building(opt_walls)
-                if loss_v <= loss_h:
-                    all_opt_results[cfg_key] = r_v
-                    chosen_dir[cfg_key] = '세로'
-                    if cfg_key == default_key:
-                        results, total_loss = r_v, loss_v
-                else:
-                    all_opt_results[cfg_key] = r_h
-                    chosen_dir[cfg_key] = '가로'
-                    if cfg_key == default_key:
-                        results, total_loss = r_h, loss_h
-            else:
-                bw = bh_base if direction == '가로' else bw_base
-                bh = bw_base if direction == '가로' else bh_base
-                opt.BW, opt.BH = bw, bh
-                r, loss = opt.optimize_building(opt_walls)
-                all_opt_results[cfg_key] = r
-                chosen_dir[cfg_key] = direction
-                if cfg_key == default_key:
-                    results, total_loss = r, loss
+            opt.BW, opt.BH = bw_base, bh_base
+            r, loss = opt.optimize_building(opt_walls)
+            all_opt_results[cfg_key] = r
+            if cfg_key == default_key:
+                results, total_loss = r, loss
 
         # globals 복원
         opt.BW = 1220 if mat == '합판' else 900
@@ -542,10 +517,8 @@ def main():
                      f"온장 {sum(r['boards'] for r in results)}장")
         suffix   = "" if reuse else "_노재사용"
         opt_html = base + f"_{mat}_1P최적화결과{suffix}.html"
-        display_dir = (f"자동→{chosen_dir.get(default_key, '?')}"
-                       if direction == '자동' else direction)
         opt_txt  = opt.make_opt_html(results, total_loss, ifc_path, mat, 1,
-                                     surcharge_pct=surcharge, direction=display_dir)
+                                     surcharge_pct=surcharge, direction='세로')
         with open(opt_html, "w", encoding="utf-8") as f:
             f.write(opt_txt)
         print(f"✓ 최적화 HTML 저장: {opt_html}")
