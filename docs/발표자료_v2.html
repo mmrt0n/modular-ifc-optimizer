@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>광건기숙사 석고보드 최적화 — M3 시공방식 근거</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#0f1117;color:#e8eaf0;font-family:'Malgun Gothic','맑은 고딕',sans-serif;overflow:hidden}
+#deck{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.slide{
+  display:none;width:1280px;height:720px;position:relative;
+  flex-direction:column;justify-content:flex-start;
+  padding:52px 64px 44px;background:#161b27;
+  border-radius:16px;box-shadow:0 8px 48px rgba(0,0,0,.6);
+}
+.slide.active{display:flex}
+.slide-title{font-size:38px;font-weight:800;color:#7ec8f7;border-bottom:2px solid #2a3550;padding-bottom:14px;margin-bottom:24px;letter-spacing:-.5px}
+p,li{font-size:21px;line-height:1.65;color:#d0d8ee}
+li{margin-bottom:6px}
+strong{color:#f0c060;font-weight:700}
+.tag{display:inline-block;background:#243050;color:#7ec8f7;border:1px solid #3a5080;font-size:17px;padding:3px 12px;border-radius:20px;margin:2px 3px}
+.cols{display:flex;gap:28px;flex:1}
+.col{flex:1;display:flex;flex-direction:column;gap:14px}
+.box{background:#1e2535;border:1px solid #2a3550;border-radius:12px;padding:18px 22px}
+.box-title{font-size:19px;font-weight:700;color:#a0b8d8;margin-bottom:10px}
+.green{color:#60e08a}.yellow{color:#f0c060}.blue{color:#7ec8f7}.red{color:#f06060}
+table{width:100%;border-collapse:collapse;font-size:19px}
+th{background:#1e2a44;color:#7ec8f7;padding:11px 14px;text-align:left;border-bottom:2px solid #2a3860}
+td{padding:10px 14px;border-bottom:1px solid #1e2535;color:#d0d8ee}
+tr:last-child td{border-bottom:none}
+td:first-child{color:#8899bb;width:28px;text-align:right;padding-right:18px}
+td:last-child{color:#6a85a8;font-size:17px}
+.pipe-row{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:22px;flex-wrap:nowrap}
+.pipe-node{background:#1e2a44;border:2px solid #3a5080;border-radius:10px;padding:13px 20px;text-align:center;font-size:20px;font-weight:700;color:#c8d8f0;white-space:nowrap}
+.pipe-arrow{font-size:26px;color:#3a5080;padding:0 6px}
+#nav{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;background:rgba(15,17,23,.85);border:1px solid #2a3550;border-radius:40px;padding:8px 20px;backdrop-filter:blur(8px)}
+#nav button{background:none;border:none;color:#8899bb;font-size:22px;cursor:pointer;padding:4px 10px;border-radius:6px;transition:all .15s}
+#nav button:hover{color:#7ec8f7;background:#1e2a40}
+#slide-num{font-size:16px;color:#8899bb;min-width:56px;text-align:center}
+svg text{font-family:'Malgun Gothic',sans-serif}
+.sub{font-size:15px;color:#5a7090;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ═══ 슬라이드 1 — 표지 ═══ -->
+<div class="slide active" id="s1">
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start">
+    <div style="font-size:17px;color:#3a5070;letter-spacing:2px;margin-bottom:22px">인천대학교 건축환경연구실</div>
+    <div style="font-size:58px;font-weight:900;color:#e8eaf0;line-height:1.15;margin-bottom:14px">
+      광건기숙사<br>
+      <span style="color:#7ec8f7">석고보드 배치 최적화</span>
+    </div>
+    <div style="font-size:24px;color:#7080a0;margin-top:6px">IFC 기반 자동 배치 — M3 시공방식 근거 중심</div>
+    <div style="margin-top:36px;display:flex;gap:12px;flex-wrap:wrap">
+      <span class="tag">1P · 세로 고정</span>
+      <span class="tag">RTL 배치</span>
+      <span class="tag">재사용 풀 (ReusePool)</span>
+      <span class="tag">M3 시공방식 100% 준수</span>
+    </div>
+    <div style="margin-top:32px;font-size:16px;color:#2a3a50">
+      근거 문서: M3_시공방식_확인결과.html &nbsp;(M3시스템즈, 2026.6.2)
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 슬라이드 2 — 시스템 파이프라인 ═══ -->
+<div class="slide" id="s2">
+  <div class="slide-title">시스템 파이프라인</div>
+  <div class="pipe-row">
+    <div class="pipe-node" style="border-color:#5080c0">📄 IFC 파일</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node" style="border-color:#507050">🔍 이중검증<br><span style="font-size:14px;color:#6090a0">ifc_verifier</span></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node" style="border-color:#705050">⚙️ 배치 최적화<br><span style="font-size:14px;color:#6090a0">gypsum_optimizer</span></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node" style="border-color:#506070">🖥️ HTML 3종 출력</div>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <div class="box">
+        <div class="box-title">🔍 검증 — ifc_verifier.py</div>
+        <ul style="padding-left:20px">
+          <li>IfcWall · IfcDoor · IfcWindow 추출</li>
+          <li>ifcopenshell + 정규식 이중검증</li>
+          <li>단위 자동보정 (m↔mm 오판 수정)</li>
+          <li>→ <span class="green">검증보고서.html (15탭)</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="col">
+      <div class="box">
+        <div class="box-title">⚙️ 최적화 — gypsum_optimizer_v3.py</div>
+        <ul style="padding-left:20px">
+          <li>RTL 배치 (M3 8-1 근거)</li>
+          <li>다중 개구부 구역별 독립 처리</li>
+          <li>ReusePool — 자투리 자동 재활용</li>
+          <li>→ <span class="green">최적화결과.html · 시뮬레이터.html</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="box" style="margin-top:14px;background:#101820;border-color:#1a2a40">
+    <p style="font-size:19px">
+      <strong>입력</strong>: IFC 파일 1개 &nbsp;|&nbsp;
+      <strong>출력</strong>: HTML 3종 자동 오픈 &nbsp;|&nbsp;
+      <strong>설치 불필요</strong>: EXE 단독 실행 &nbsp;|&nbsp;
+      자재: 석고보드 / 합판 선택
+    </p>
+  </div>
+</div>
+
+<!-- ═══ 슬라이드 3 — 9가지 로직 + 근거 ═══ -->
+<div class="slide" id="s3">
+  <div class="slide-title">석고보드 배치 로직 9가지 + M3 근거</div>
+  <table>
+    <thead>
+      <tr><th style="width:36px">#</th><th>로직</th><th>근거 (M3 시공방식 확인결과)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>세로(종방향) 시공</td><td>3-1 &nbsp;시공 방향 = 세로</td></tr>
+      <tr><td>2</td><td>1P 단겹 고정</td><td>M3 표준 (IS_2P = False)</td></tr>
+      <tr><td>3</td><td>각재 450mm 피치 = 보드 이음매 위치</td><td>1-1 &nbsp;각재 간격 450mm</td></tr>
+      <tr><td>4</td><td><strong>RTL 배치</strong> — 오른쪽 끝부터 → 자투리 왼쪽 집중</td><td>8-1 &nbsp;누적공차 대응 "끝부터 시작"</td></tr>
+      <tr><td>5</td><td>슬리버 보정 — 왼쪽 자투리 &lt;300mm → 300mm 확보</td><td>6-1 &nbsp;재사용 최소 폭 300mm</td></tr>
+      <tr><td>6</td><td>개구부 걸치기 + 중심 대칭 배치</td><td>4-1 걸치기 / 4-2 중심 대칭</td></tr>
+      <tr><td>7</td><td>다중 개구부 구역별 독립 처리</td><td>자투리 집중·최소화 목적</td></tr>
+      <tr><td>8</td><td>바닥 밀착 (FLOOR_GAP = 0)</td><td>9-1 &nbsp;바닥 밀착</td></tr>
+      <tr><td>9</td><td>이음매 교차 — 1P에서 행간 엇갈림 없음</td><td>3-2 &nbsp;교차배치 (레이어 간 = 2P 전용)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ 슬라이드 4 — RTL 배치 ═══ -->
+<div class="slide" id="s4">
+  <div class="slide-title">RTL 배치 — 왜 오른쪽부터 채우는가</div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:18px">
+    <svg viewBox="0 0 1100 180" style="width:100%;border-radius:10px;background:#0e1520">
+      <text x="550" y="18" text-anchor="middle" fill="#3a5070" font-size="15">예시: 벽 길이 = 3700mm</text>
+      <!-- 자투리 (왼쪽) -->
+      <rect x="20" y="28" width="120" height="110" rx="4" fill="#1a3a2a" stroke="#2a7040" stroke-width="2"/>
+      <text x="80" y="84" text-anchor="middle" fill="#60c080" font-size="16" font-weight="bold">자투리</text>
+      <text x="80" y="106" text-anchor="middle" fill="#3a7050" font-size="14">≥300mm</text>
+      <!-- 온장 x3 -->
+      <rect x="148" y="28" width="306" height="110" rx="4" fill="#1a2e50" stroke="#3a60a0" stroke-width="1.5"/>
+      <text x="301" y="88" text-anchor="middle" fill="#7ec8f7" font-size="18" font-weight="bold">온장</text>
+      <text x="301" y="112" text-anchor="middle" fill="#4a80b0" font-size="15">900mm</text>
+      <rect x="460" y="28" width="306" height="110" rx="4" fill="#1a2e50" stroke="#3a60a0" stroke-width="1.5"/>
+      <text x="613" y="88" text-anchor="middle" fill="#7ec8f7" font-size="18" font-weight="bold">온장</text>
+      <text x="613" y="112" text-anchor="middle" fill="#4a80b0" font-size="15">900mm</text>
+      <rect x="772" y="28" width="306" height="110" rx="4" fill="#1a2e50" stroke="#3a60a0" stroke-width="1.5"/>
+      <text x="925" y="88" text-anchor="middle" fill="#7ec8f7" font-size="18" font-weight="bold">온장</text>
+      <text x="925" y="112" text-anchor="middle" fill="#4a80b0" font-size="15">900mm</text>
+      <!-- 화살표 방향 -->
+      <text x="550" y="162" text-anchor="middle" fill="#3a5570" font-size="14">← 오른쪽 끝부터 온장(900mm)을 순서대로 채움 · 남은 왼쪽에 자투리 1개로 집중</text>
+    </svg>
+    <div class="cols" style="flex:none">
+      <div class="box" style="background:#181e18;border-color:#2a4a2a">
+        <div class="box-title" style="color:#60c080">RTL 효과</div>
+        <ul style="padding-left:20px">
+          <li>자투리가 <strong style="color:#60e08a">왼쪽 1개</strong>로 집중</li>
+          <li>절단 횟수 최소화</li>
+          <li>재사용 판단 단순화</li>
+          <li>누적공차를 비중요 구간(끝)으로 밀어냄</li>
+        </ul>
+      </div>
+      <div class="box" style="background:#1a2a1a;border-color:#2a5030">
+        <div class="box-title" style="color:#80c880">M3 근거 — 확인결과 8-1</div>
+        <p style="font-size:21px;line-height:1.8">
+          <strong style="color:#80d880">누적공차 대응</strong><br>
+          <span style="color:#80a880;font-size:19px">"끝부터 시작"</span><br>
+          <span style="font-size:17px;color:#507050">→ 코드: _seam_positions_rtl() / calcXBreaks() RTL</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 슬라이드 5 — 재사용 로직 ═══ -->
+<div class="slide" id="s5">
+  <div class="slide-title">재사용 자재 배치 로직 + 근거</div>
+  <div style="margin-bottom:16px">
+    <svg viewBox="0 0 1100 130" style="width:100%;border-radius:8px;background:#0e1520">
+      <!-- 벽 A -->
+      <rect x="30" y="30" width="230" height="70" rx="6" fill="#1a2535" stroke="#2a3860" stroke-width="1.5"/>
+      <rect x="30" y="30" width="70" height="70" rx="4" fill="#1a3a28" stroke="#2a7040" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="65" y="62" text-anchor="middle" fill="#60c080" font-size="14">자투리</text>
+      <text x="65" y="80" text-anchor="middle" fill="#3a7050" font-size="12">발생</text>
+      <text x="215" y="68" fill="#304060" font-size="13">벽 A</text>
+      <!-- 화살표 -->
+      <text x="278" y="70" font-size="22" fill="#2a4060">→</text>
+      <!-- ReusePool -->
+      <rect x="310" y="20" width="240" height="90" rx="8" fill="#102520" stroke="#1a6040" stroke-width="2"/>
+      <text x="430" y="52" text-anchor="middle" fill="#40c080" font-size="16" font-weight="bold">♻ ReusePool</text>
+      <text x="430" y="74" text-anchor="middle" fill="#206040" font-size="13">폭 ≥ 300mm</text>
+      <text x="430" y="92" text-anchor="middle" fill="#206040" font-size="13">높이 ≥ 450mm</text>
+      <!-- 화살표 -->
+      <text x="562" y="70" font-size="22" fill="#2a4060">→</text>
+      <!-- 벽 B -->
+      <rect x="596" y="30" width="230" height="70" rx="6" fill="#1a2535" stroke="#2a3860" stroke-width="1.5"/>
+      <rect x="596" y="30" width="70" height="70" rx="4" fill="#102820" stroke="#1a7040" stroke-width="1.5"/>
+      <text x="631" y="62" text-anchor="middle" fill="#40d080" font-size="14">♻ 재사용</text>
+      <text x="631" y="80" text-anchor="middle" fill="#208040" font-size="12">적용</text>
+      <text x="800" y="68" fill="#304060" font-size="13">벽 B</text>
+      <!-- 우선순위 설명 -->
+      <text x="900" y="44" fill="#3a6050" font-size="13">우선순위:</text>
+      <text x="900" y="64" fill="#2a5040" font-size="12">① 같은 공간</text>
+      <text x="900" y="82" fill="#2a5040" font-size="12">② 같은 층</text>
+      <text x="900" y="100" fill="#2a5040" font-size="12">③ 전체</text>
+    </svg>
+  </div>
+  <table>
+    <thead><tr><th>로직</th><th>근거 (M3 확인결과)</th></tr></thead>
+    <tbody>
+      <tr><td colspan="0" style="color:#d0d8ee;width:auto">최소 규격 &nbsp;<strong>폭 ≥ 300mm · 높이 ≥ 450mm</strong> (두 조건 모두)</td><td>6-1, 6-2</td></tr>
+      <tr><td colspan="0" style="color:#d0d8ee">치수 정확히 맞지 않아도 재사용 가능</td><td>M3 확인 (치수 일치 불필요)</td></tr>
+      <tr><td colspan="0" style="color:#d0d8ee">같은 공간 → 같은 층 우선 매칭 (운반 효율)</td><td>현장 효율 기준</td></tr>
+      <tr><td colspan="0" style="color:#d0d8ee">보드 면방향(이음매/죽은면) 무관</td><td>7-1, 7-2 &nbsp;상관없음</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ 슬라이드 6 — 다중 개구부 ═══ -->
+<div class="slide" id="s6">
+  <div class="slide-title">다중 개구부 — 구역별 독립 처리</div>
+  <div style="margin-bottom:18px">
+    <div style="font-size:17px;color:#5070a0;margin-bottom:10px">예시: 벽 길이 13,100mm · 개구부 4개</div>
+    <svg viewBox="0 0 1140 110" style="width:100%;border-radius:8px;background:#0e1520">
+      <rect x="10" y="20" width="1120" height="70" rx="3" fill="#1a2230" stroke="#2a3860" stroke-width="1.5"/>
+      <!-- RTL 구역 (양끝, 파랑) -->
+      <rect x="10" y="20" width="110" height="70" fill="#0d2535" stroke="#2a5070" stroke-width="1.5"/>
+      <text x="65" y="52" text-anchor="middle" fill="#5090c0" font-size="13" font-weight="bold">RTL</text>
+      <text x="65" y="70" text-anchor="middle" fill="#3a6080" font-size="11">자투리→왼쪽</text>
+      <rect x="1020" y="20" width="110" height="70" fill="#0d2535" stroke="#2a5070" stroke-width="1.5"/>
+      <text x="1075" y="52" text-anchor="middle" fill="#5090c0" font-size="13" font-weight="bold">RTL</text>
+      <text x="1075" y="70" text-anchor="middle" fill="#3a6080" font-size="11">자투리→오른쪽</text>
+      <!-- 개구부 (빨강) -->
+      <rect x="120" y="20" width="170" height="70" fill="#2a1818" stroke="#703030" stroke-width="1.5"/>
+      <text x="205" y="58" text-anchor="middle" fill="#c06060" font-size="13">개구부 1</text>
+      <rect x="400" y="20" width="170" height="70" fill="#2a1818" stroke="#703030" stroke-width="1.5"/>
+      <text x="485" y="58" text-anchor="middle" fill="#c06060" font-size="13">개구부 2</text>
+      <rect x="680" y="20" width="170" height="70" fill="#2a1818" stroke="#703030" stroke-width="1.5"/>
+      <text x="765" y="58" text-anchor="middle" fill="#c06060" font-size="13">개구부 3</text>
+      <rect x="880" y="20" width="140" height="70" fill="#2a1818" stroke="#703030" stroke-width="1.5"/>
+      <text x="950" y="58" text-anchor="middle" fill="#c06060" font-size="13">개구부 4</text>
+      <!-- LTR 구역 (초록) -->
+      <rect x="290" y="20" width="110" height="70" fill="#0d2518" stroke="#2a6030" stroke-width="1.5"/>
+      <text x="345" y="52" text-anchor="middle" fill="#40a060" font-size="13" font-weight="bold">LTR</text>
+      <text x="345" y="70" text-anchor="middle" fill="#2a6040" font-size="11">온장→개구부</text>
+      <rect x="570" y="20" width="110" height="70" fill="#0d2518" stroke="#2a6030" stroke-width="1.5"/>
+      <text x="625" y="52" text-anchor="middle" fill="#40a060" font-size="13" font-weight="bold">LTR</text>
+      <text x="625" y="70" text-anchor="middle" fill="#2a6040" font-size="11">온장→개구부</text>
+    </svg>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <div class="box" style="background:#1e1818;border-color:#4a2020">
+        <div class="box-title" style="color:#e07070">단순 전체 RTL의 문제</div>
+        <ul style="padding-left:20px;font-size:20px">
+          <li>개구부 사이 구역마다 <span class="red">잔 조각 산발</span></li>
+          <li>개구부 4개 → 잔 조각 4+ 개 분산</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col">
+      <div class="box" style="background:#181e18;border-color:#2a4a2a">
+        <div class="box-title" style="color:#70d070">구역별 독립 처리 (적용)</div>
+        <ul style="padding-left:20px;font-size:20px">
+          <li><strong style="color:#7ec8f7">양끝 구역</strong> — RTL: 자투리 벽 가장자리</li>
+          <li><strong style="color:#60d070">개구부 사이</strong> — LTR: 온장이 이전 개구부에 밀착</li>
+          <li>→ <span class="green">자투리 최소화·집중</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="box" style="margin-top:14px;background:#101820;border-color:#1e2a40">
+    <p style="font-size:18px">
+      <code style="background:#0e1218;padding:2px 8px;border-radius:4px;color:#a0d0f0">_columns_rtl()</code> ·
+      <code style="background:#0e1218;padding:2px 8px;border-radius:4px;color:#a0d0f0">_columns_ltr()</code>
+      구역별 독립 계산 후 합산 &nbsp;·&nbsp;
+      <code style="background:#0e1218;padding:2px 8px;border-radius:4px;color:#a0d0f0">_fix_thin_edge_columns()</code> 300mm 미만 보정
+    </p>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<div id="nav">
+  <button onclick="go(-1)">◀</button>
+  <span id="slide-num">1 / 6</span>
+  <button onclick="go(1)">▶</button>
+</div>
+
+<script>
+const slides=document.querySelectorAll('.slide');
+let cur=0;
+function go(d){
+  slides[cur].classList.remove('active');
+  cur=Math.max(0,Math.min(slides.length-1,cur+d));
+  slides[cur].classList.add('active');
+  document.getElementById('slide-num').textContent=(cur+1)+' / '+slides.length;
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' ')go(1);
+  if(e.key==='ArrowLeft')go(-1);
+});
+</script>
+</body>
+</html>
