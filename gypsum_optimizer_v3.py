@@ -11,7 +11,7 @@ v2 대비 변경사항 (M3_시공방식_확인결과.html 기준):
 변경 없음 (M3와 일치):
   - 각재 간격 450mm (STUD=450)
   - 세로(종방향) 시공 (BH=1800)
-  - 2P 이음매 교차 (layer_offset=STUD)
+  - 1P 단겹 시공 (IS_2P=False 고정)
   - 바닥 밀착 (y=0 기준)
   - 부착 순서: 아래→위, 왼쪽→오른쪽
 """
@@ -30,7 +30,7 @@ BH            = 1800   # 석고보드 높이 (mm)
 STUD          = 450    # 각재 간격 (mm)
 MIN_REUSE_W   = 300    # [M3변경] 재사용 최소 폭 (mm) — 기존 450
 MIN_REUSE_H   = 450    # [M3변경] 재사용 최소 높이 (mm) — 기존 450
-IS_2P         = True   # 2P 시공 여부
+IS_2P         = False  # 2P 시공 여부 (1P 고정)
 
 # 합판 보강 규격
 PLY_T         = 12     # 보강 합판 두께 (mm)
@@ -993,7 +993,8 @@ def _cut_list(r: dict) -> list:
 
 
 def make_opt_html(results: list, total_loss: float,
-                  ifc_path: str, mat: str = "석고보드", ply: int = 2) -> str:
+                  ifc_path: str, mat: str = "석고보드", ply: int = 1,
+                  surcharge_pct: float = 0.0, direction: str = '세로') -> str:
     from datetime import datetime
     import os
 
@@ -1016,6 +1017,13 @@ def make_opt_html(results: list, total_loss: float,
 
     # 합판 통계
     plywood_total = sum(len(r.get('plywood_zones', [])) for r in results)
+
+    # 할증 발주량
+    surcharge_boards = math.ceil(total_boards * (1 + surcharge_pct / 100)) if surcharge_pct > 0 else 0
+    dir_label = {
+        '세로': '세로(종방향)', '가로': '가로(횡방향)',
+        '자동→세로': '자동→세로', '자동→가로': '자동→가로',
+    }.get(direction, direction)
 
     ifc_name = os.path.basename(ifc_path) if ifc_path else ""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1222,8 +1230,8 @@ def make_opt_html(results: list, total_loss: float,
 </style>
 </head><body>
 <div class="header">
-  <h1>🏗  석고보드 절단 최적화 결과 <small>— M3시스템즈 시공방식 (각재+세로 시공 / 자투리 재사용)</small></h1>
-  <div class="sub">파일: {ifc_name} &nbsp;│&nbsp; 자재: {mat} {bw_label} &nbsp;│&nbsp; 시공: {ply}P &nbsp;│&nbsp; 생성: {now}</div>
+  <h1>🏗  석고보드 절단 최적화 결과 <small>— M3시스템즈 시공방식 (각재+{dir_label} / 1P / 자투리 재사용)</small></h1>
+  <div class="sub">파일: {ifc_name} &nbsp;│&nbsp; 자재: {mat} {bw_label} &nbsp;│&nbsp; 시공: 1P {dir_label} &nbsp;│&nbsp; 생성: {now}</div>
 </div>
 
 <div class="summary">
@@ -1235,6 +1243,7 @@ def make_opt_html(results: list, total_loss: float,
   <div class="card warn"><div class="val">{total_waste_m2:.2f}</div><div class="lbl">폐기량 (㎡)</div></div>
   <div class="card"><div class="val">{cut_count}</div><div class="lbl">절단 횟수</div></div>
   <div class="card"><div class="val">{plywood_total}</div><div class="lbl">합판 보강 (곳)</div></div>
+  {f'<div class="card warn"><div class="val">{surcharge_boards}</div><div class="lbl">할증 발주량 ({surcharge_pct:.0f}%)<br><span style="font-size:10px;opacity:.7">{total_boards}장 × {1+surcharge_pct/100:.2f}</span></div></div>' if surcharge_pct > 0 else ''}
 </div>
 
 {legend}
@@ -1257,7 +1266,7 @@ function switchTabK(containerId, idx) {{
   보드 <code>{BW}×{BH}mm</code> &nbsp;·&nbsp;
   각재 <code>{STUD}mm</code> &nbsp;·&nbsp;
   재사용 최소 <code>{MIN_REUSE_W}×{MIN_REUSE_H}mm</code> &nbsp;·&nbsp;
-  {'2P 이중겹 (이음매 ' + str(STUD) + 'mm 엇갈림)' if IS_2P else '1P 단겹'}
+  방향 {dir_label} &nbsp;·&nbsp; 1P 단겹
 </div>
 </body></html>"""
     return html
