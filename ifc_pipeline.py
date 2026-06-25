@@ -330,6 +330,7 @@ def _walls_for_optimizer(verifier_walls: list) -> list:
     """검증 결과 → optimizer 입력 변환. 개구부 좌표 단위 오류 자동 보정."""
     result = []
     skipped_unit = 0
+    seen_ids: dict = {}  # wall_id → count (중복 이름에 고유 suffix 부여)
     for w in verifier_walls:
         if not w.get('dims_ok') or not w.get('L_mm') or not w.get('H_mm'):
             continue
@@ -349,8 +350,16 @@ def _walls_for_optimizer(verifier_walls: list) -> list:
                 continue
             ops.append({'ox': ox, 'ow': ow, 'oh': oh, 'oy': oy})
 
+        base_id = w.get('name') or w.get('id', '?')
+        if base_id in seen_ids:
+            seen_ids[base_id] += 1
+            wall_id = f"{base_id}_{seen_ids[base_id]}"
+        else:
+            seen_ids[base_id] = 1
+            wall_id = base_id
+
         result.append({
-            'wall_id':     w.get('name') or w.get('id', '?'),
+            'wall_id':     wall_id,
             'space_id':    w.get('space') or 'unknown',
             'floor_id':    w.get('storey') or 'unknown',
             'L':           L,
@@ -496,6 +505,15 @@ def main():
         try:
             tmpl = _simulator_template_path()
             sim_walls = verifier.export_simulator_walls(data['walls'])
+            # opt_walls와 wall_id 일치: 같은 중복제거 적용
+            _seen2: dict = {}
+            for _sw in sim_walls:
+                _base = _sw['wall_id']
+                if _base in _seen2:
+                    _seen2[_base] += 1
+                    _sw['wall_id'] = f"{_base}_{_seen2[_base]}"
+                else:
+                    _seen2[_base] = 1
             sim_txt   = opt.make_simulator_html(
                 sim_walls, ifc_name, tmpl,
                 opt_results_all=all_opt_results,
