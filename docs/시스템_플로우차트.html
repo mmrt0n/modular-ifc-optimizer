@@ -51,24 +51,24 @@ body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#f4f6f9;c
   <!-- PART 1 -->
   <div class="sec">① 전체 파이프라인 <span class="tag">ifc_pipeline.py · main()</span></div>
   <div class="flow">
-    <div class="box b-io"><div class="t">사용자 설정 마법사</div><div class="s">자재(석고보드/합판) · 할증률% · 재사용 ON/OFF · IFC 파일</div><div class="fn">run_setup_wizard()</div></div>
+    <div class="box b-io"><div class="t">단계별 설정 화면</div><div class="s">자재(석고보드/합판) · 할증률% · 재사용 ON/OFF · IFC 파일 순서대로 입력</div><div class="fn">run_setup_wizard()</div></div>
     <div class="arr"></div>
-    <div class="box b-io"><div class="t">📄 IFC 파일 입력</div><div class="s">아키캐드 BIM 모델</div></div>
+    <div class="box b-io"><div class="t">📄 IFC 파일 입력</div><div class="s">BIM 소프트웨어 범용 (ArchiCAD·Revit·Tekla 등 IFC 내보내기)</div></div>
     <div class="arr"></div>
     <div class="loop">
       <div class="lh">IFC 파싱 &amp; 검증 — ifc_verifier.py</div>
       <div class="flow">
         <div class="box b-proc"><div class="t">요소 추출</div><div class="s">벽·문·창·공간·층·슬래브·기둥·보</div><div class="fn">extract_all()</div></div>
         <div class="arr"></div>
-        <div class="box b-proc"><div class="t">단위 자동 보정</div><div class="s">m↔mm 오판 수정</div><div class="fn">to_mm() · _fix_unit()</div></div>
+        <div class="box b-proc"><div class="t">단위 자동 보정</div><div class="s">치수가 너무 작으면(m로 들어옴) ×1000 → mm 통일</div><div class="fn">to_mm() · _fix_unit()</div></div>
         <div class="arr"></div>
-        <div class="box b-proc"><div class="t">이중 검증</div><div class="s">ifcopenshell ↔ 정규식 교차대조</div><div class="fn">dual_verify()</div></div>
+        <div class="box b-proc"><div class="t">이중 검증</div><div class="s">ifcopenshell 파싱값 ↔ 원본 텍스트 정규식 교차대조</div><div class="fn">dual_verify()</div></div>
         <div class="arr"></div>
-        <div class="box b-proc"><div class="t">QA 전수조사 + 기준값 대조</div><div class="s">공백·겹침·타공누락·데이터오류</div><div class="fn">run_checks() · run_cross_checks()</div></div>
+        <div class="box b-proc"><div class="t">QA 전수조사 (모든 벽 자동 점검)</div><div class="s">보드 공백·겹침·타공누락·중복 + 입력 기준값 대조</div><div class="fn">run_checks() · run_cross_checks()</div></div>
       </div>
     </div>
     <div class="arrlbl">↓ 검증보고서.html (15탭)</div>
-    <div class="box b-proc"><div class="t">최적화 입력 변환</div><div class="s">검증 벽 → 최적화 엔진 포맷 (치수 못읽은 벽 제외)</div><div class="fn">_walls_for_optimizer()</div></div>
+    <div class="box b-proc"><div class="t">최적화 입력 변환</div><div class="s">검증된 벽 → 엔진 입력 dict{L,H,개구부}로 변환<br>· 석고보드 비대상(철물 부재 등 치수 없는 벽) 제외</div><div class="fn">_walls_for_optimizer()</div></div>
     <div class="arr"></div>
     <div class="box b-core" style="width:404px"><div class="t">⚙️ 배치 최적화 엔진</div><div class="s">→ PART ② 참조</div><div class="fn">optimize_building()</div></div>
     <div class="arr"></div>
@@ -84,34 +84,39 @@ body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#f4f6f9;c
   <!-- PART 2 -->
   <div class="sec">② 배치 최적화 알고리즘 <span class="tag">gypsum_optimizer_v3.py</span></div>
   <div class="flow">
-    <div class="box b-proc"><div class="t">벽 정렬 + 재사용 풀 생성</div><div class="s">층별 → 면적 큰 순 정렬 · 풀은 공장 단위 전역</div><div class="fn">optimize_building() · ReusePool()</div></div>
+    <div class="box b-proc"><div class="t">벽 정렬 + 재사용 풀 생성</div><div class="s">면적 큰 순 정렬 · 풀은 공장 단위 전역(층·공간 무관)</div><div class="fn">optimize_building() · ReusePool()</div></div>
     <div class="arr"></div>
     <div class="loop">
       <div class="lh">FOR 각 벽 → optimize_wall()</div>
       <div class="flow">
         <div class="box b-proc"><div class="t">개구부 병합</div><div class="s">겹치는 문·창 통합</div><div class="fn">_merge_openings()</div></div>
         <div class="arr"></div>
-        <div class="box b-dec"><div class="t">◇ Y배치(C/D) 추정</div><div class="s">로스율 최소 케이스 선택</div></div>
-        <div class="arr"></div>
-        <div class="box b-core"><div class="t">X축 열 계획</div><div class="fn">build_column_plan()</div></div>
-        <div class="arrlbl">↓ 개구부 개수로 방향 분기</div>
+        <div class="box b-core"><div class="t">X축 보드 그리드 (걸치기)</div><div class="s">개구부 경계를 끊지 않는 순수 보드폭 격자<br>→ 보드가 개구부를 가로지름 (M3 4-1 걸치기 시공)</div><div class="fn">_calc_x_breaks()</div></div>
+        <div class="arrlbl">↓ 개구부 유무로 그리드 방향 분기</div>
         <div class="branch">
           <div class="box b-dec"><div class="t">개구부 없음</div><div class="s">전체 <b>RTL</b><br>오른쪽 끝부터 온장<br>자투리 → 왼쪽 (8-1)</div></div>
-          <div class="box b-dec"><div class="t">개구부 있음</div><div class="s">전체 <b>LTR</b><br>왼쪽 하단부터 온장<br>자투리 → 개구부·오른쪽 (9번)</div></div>
+          <div class="box b-dec"><div class="t">개구부 있음</div><div class="s">전체 <b>LTR</b><br>왼쪽 하단부터 온장<br>자투리 → 오른쪽 끝 (9번)</div></div>
         </div>
         <div class="arr"></div>
-        <div class="box b-core"><div class="t">슬리버 보정</div><div class="s">끝칸 &lt;300mm → 인접 열에서 폭 빌림</div><div class="fn">_fix_thin_edge_columns()</div></div>
+        <div class="box b-core"><div class="t">슬리버 보정</div><div class="s">끝칸 &lt;300mm → 인접 칸에서 폭 빌림</div><div class="fn">_fix_first_thin() / _fix_last_thin()</div></div>
         <div class="arr"></div>
-        <div class="box b-core"><div class="t">Y축 행 계획</div><div class="s">아래→위 · 온장 바닥부터 · 자투리 천장</div><div class="fn">build_row_plan()</div></div>
-        <div class="arr"></div>
-        <div class="box b-proc"><div class="t">개구부 열: 위/아래 분할 + 페어링</div><div class="s">위+아래 합 ≤ 1장이면 원판 1장서 재단</div><div class="fn">_split_span() · _process_cell_pair()</div></div>
+        <div class="box b-core"><div class="t">Y축 행 분할</div><div class="s">아래→위 · 온장 바닥부터 · 자투리 천장 (2-1·9-1)</div><div class="fn">_rows_in_region()</div></div>
         <div class="arr"></div>
         <div class="loop amber">
-          <div class="lh">셀 처리 — _process_cell()</div>
+          <div class="lh">각 셀(열×행) 처리 — _classify_cell() · _process_grid_cell()</div>
           <div class="flow">
-            <div class="box b-dec" style="width:300px"><div class="t">◇ 재사용 풀에 맞는 자투리?</div><div class="s">폭≥300 &amp; 높이≥450mm</div></div>
-            <div class="arrlbl">예 ↓ &nbsp;|&nbsp; 아니오 → 온장 절단</div>
-            <div class="box b-core" style="width:300px"><div class="t">♻ 재사용 적용 / 자투리 등록</div><div class="s">공장 단위 전역 · 딱 맞는(면적 최소) 우선</div><div class="fn">pool.consume() · pool.add()</div></div>
+            <div class="box b-dec" style="width:330px"><div class="t">◇ 개구부와 셀의 관계 분류</div><div class="s">개구부 면적 = solid → 형상 판별 (throughX/Y)</div></div>
+            <div class="arrlbl">↓</div>
+            <div class="branch">
+              <div class="box b-io" style="width:150px"><div class="t">skip</div><div class="s">셀 전체가<br>개구부 안</div></div>
+              <div class="box b-proc" style="width:150px"><div class="t">full / cut</div><div class="s">온장 /<br>벽가장자리 절단</div></div>
+            </div>
+            <div class="branch" style="margin-top:8px">
+              <div class="box b-dec" style="width:150px;background:#fef9c3;border-color:#ca8a04"><div class="t">edge_cut</div><div class="s">개구부가 모서리만<br>걸침 → 직선 1회</div></div>
+              <div class="box b-dec" style="width:150px;background:#ede9fe;border-color:#7c3aed"><div class="t">notch</div><div class="s">개구부가 보드 관통<br>→ ㄱ/ㄴ자 2회</div></div>
+            </div>
+            <div class="arrlbl">↓ cut·edge_cut만 재사용 시도 (notch·full=신규)</div>
+            <div class="box b-core" style="width:330px"><div class="t">♻ 재사용 적용 / 자투리 등록</div><div class="s">공장 단위 전역 · 딱 맞는(면적 최소) 우선</div><div class="fn">pool.consume() · pool.add()</div></div>
           </div>
         </div>
         <div class="arr"></div>
@@ -119,11 +124,12 @@ body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#f4f6f9;c
       </div>
     </div>
     <div class="arr"></div>
-    <div class="box b-core" style="width:404px"><div class="t">전체 로스율 집계</div><div class="s">재사용 전/후 비교 · 절단 사이즈 빈도</div></div>
+    <div class="box b-core" style="width:404px"><div class="t">전체 로스율 집계</div><div class="s">재사용 전/후 비교 · 절단 사이즈 빈도 · 코너 이격 경고</div></div>
   </div>
 
   <div class="note">
-    <b>배치 방향 규칙 (M3 기준):</b> 개구부 <b>없는</b> 벽은 오른쪽 끝부터 채우는 <b>RTL</b>(누적공차를 왼쪽 끝으로 흡수, M3 8-1). 개구부 <b>있는</b> 벽은 왼쪽 하단부터 온장으로 시작하는 <b>LTR</b>(자투리는 개구부 쪽·오른쪽 끝으로, M3 9번). 두 엔진(Python 권위값 / JS 폴백)이 동일하게 분기. 시공 방향은 세로(종방향) 1P 고정.
+    <b>배치 방향 규칙 (M3 기준):</b> 개구부 <b>없는</b> 벽은 오른쪽 끝부터 채우는 <b>RTL</b>(누적공차를 왼쪽 끝으로 흡수, M3 8-1 "끝부터 시작" — 시작점 좌/우는 미명시, 본 시스템은 오른쪽 시작으로 구현). 개구부 <b>있는</b> 벽은 왼쪽 하단부터 온장으로 시작하는 <b>LTR</b>(자투리는 오른쪽 끝으로, M3 9번·2-2). 두 엔진(Python 권위값 / JS 폴백) 동일 분기. 시공 방향은 세로(종방향) 1P 고정.<br>
+    <b>개구부 절단 (M3 4-1 걸치기):</b> 보드 그리드가 개구부를 가로지름. 개구부가 보드 <b>모서리만</b> 걸치면 <b>직선절단(edge_cut)</b>, 보드 <b>내부를 관통</b>하면 <b>노치절단(notch, ㄱ/ㄴ자)</b>. 이음매가 개구부 코너에서 200mm(CORNER_MIN) 이내면 시공 경고 카운트.
   </div>
 </div>
 </body>

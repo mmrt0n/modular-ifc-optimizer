@@ -30,6 +30,7 @@ BH            = 1800   # 석고보드 높이 (mm)
 STUD          = 450    # 각재 간격 (mm)
 MIN_REUSE_W   = 300    # [M3변경] 재사용 최소 폭 (mm) — 기존 450
 MIN_REUSE_H   = 450    # [M3변경] 재사용 최소 높이 (mm) — 기존 450
+CORNER_MIN    = 200    # 개구부 코너 이격 — 이음매가 코너에서 이 거리 이내면 경고
 IS_2P         = False  # 2P 시공 여부 (1P 고정)
 
 # 합판 보강 규격
@@ -121,177 +122,12 @@ def _seam_positions_rtl(x_start: float, x_end: float,
     return sorted(seams)
 
 
-def _columns_rtl(x_start: float, length: float,
-                 layer_offset: int = 0) -> list:
-    """끝부터 배치한 열 목록."""
-    if length <= 0:
-        return []
-    x_end = x_start + length
-    seams = _seam_positions_rtl(x_start, x_end, layer_offset)
-    cols = []
-    for i in range(len(seams) - 1):
-        cx = seams[i]
-        cw = round(seams[i + 1] - seams[i], 1)
-        if cw < 0.5:
-            continue
-        t = 'full' if abs(cw - BW) < 0.5 else 'cut'
-        cols.append((t, cx, cw))
-    return cols
-
-
-def _columns_ltr(x_start: float, length: float,
-                 layer_offset: int = 0) -> list:
-    """시작부터 배치한 열 목록 (자투리가 오른쪽 끝에 위치).
-    개구부 오른쪽 구역에서 사용 → 자투리가 개구부 옆이 아닌 벽 오른쪽 끝으로 감."""
-    if length <= 0:
-        return []
-    x_end = x_start + length
-    seams = {round(x_start, 1), round(x_end, 1)}
-    x = round(x_start + layer_offset, 1)
-    while x < x_end:
-        if x_start < x < x_end:
-            seams.add(round(x, 1))
-        x = round(x + BW, 1)
-    seams = sorted(seams)
-    cols = []
-    for i in range(len(seams) - 1):
-        cx = seams[i]
-        cw = round(seams[i + 1] - seams[i], 1)
-        if cw < 0.5:
-            continue
-        t = 'full' if abs(cw - BW) < 0.5 else 'cut'
-        cols.append((t, cx, cw))
-    return cols
-
-
-def _split_span(x_start: float, w: float) -> list:
-    """구간 [x_start, x_start+w]를 표준폭(BW) 열로 분할.
-    개구부 위·아래 보드가 BW보다 넓은 단일판이 되지 않도록. 반환: [(x, w), ...]"""
-    if w <= BW + 0.5:
-        return [(round(x_start, 1), round(w, 1))]
-    cols = _fix_thin_edge_columns(_columns_ltr(x_start, w, 0))
-    return [(cx, cw) for t, cx, cw in cols if t != 'opening']
-
-
 # ─────────────────────────────────────────
 # [M3 STEP3] 슬리버(끝칸 자투리) 보정
 # ─────────────────────────────────────────
-def _fix_thin_edge_columns(cols, min_col=300):
-    """
-    벽 양 끝(첫/마지막) 비개구부 열이 min_col(300mm) 미만이면 인접 열에서
-    폭을 빌려 min_col을 확보한다. 인접 열은 줄어들기만 하므로 모든 열이
-    표준규격(≤BW)을 유지한다. 인접 열과 경계를 공유하지 않거나(개구부 사이)
-    빌릴 폭이 부족하면 그대로 둔다. — 베이스 정리본 STEP3 반영.
-    """
-    if len(cols) < 2:
-        return cols
-    cols = [list(c) for c in cols]
-    nidx = [i for i, c in enumerate(cols) if c[0] != 'opening']
-    if len(nidx) < 2:
-        return [tuple(c) for c in cols]
-
-    def _borrow(thin_i, donor_i):
-        _, x, w = cols[thin_i]
-        _, dx, dw = cols[donor_i]
-        adjacent = abs((x + w) - dx) < 0.5 or abs((dx + dw) - x) < 0.5
-        if not adjacent:
-            return
-        need = round(min_col - w, 1)
-        if dw - need <= 0.5:
-            return
-        if dx < x:   # donor 왼쪽 → thin은 마지막 열
-            cols[donor_i][2] = round(dw - need, 1)
-            cols[thin_i][1] = round(x - need, 1)
-            cols[thin_i][2] = min_col
-        else:        # donor 오른쪽 → thin은 첫 열
-            cols[thin_i][2] = min_col
-            cols[donor_i][1] = round(dx + need, 1)
-            cols[donor_i][2] = round(dw - need, 1)
-
-    if cols[nidx[0]][2] < min_col:
-        _borrow(nidx[0], nidx[1])
-    if cols[nidx[-1]][2] < min_col:
-        _borrow(nidx[-1], nidx[-2])
-
-    # 개구부 바로 옆 얇은 열도 보정 (중간 열)
-    for ni, idx in enumerate(nidx):
-        if ni in (0, len(nidx) - 1):
-            continue
-        if cols[idx][2] >= min_col:
-            continue
-        adj_opening = (
-            (idx > 0 and cols[idx - 1][0] == 'opening') or
-            (idx + 1 < len(cols) and cols[idx + 1][0] == 'opening')
-        )
-        if not adj_opening:
-            continue
-        # 왼쪽 비개구부 이웃 먼저 시도, 안 되면 오른쪽
-        if ni > 0:
-            _borrow(idx, nidx[ni - 1])
-        if cols[idx][2] < min_col and ni + 1 < len(nidx):
-            _borrow(idx, nidx[ni + 1])
-
-    return [tuple(c) for c in cols]
-
-
 # ─────────────────────────────────────────
 # x축 열 계획 (통합)
 # ─────────────────────────────────────────
-def build_column_plan(L: float, ops_xw: list,
-                      is_external: bool, layer: int = 1):
-    """
-    x방향 열 계획. 다중 개구부 지원.
-
-    ops_xw: [(ox, ow), ...] — 개구부 x시작·폭 목록 (0개 이상)
-    배치 규칙: [M3 9번] 개구부 있는 벽은 "왼쪽 하단부터 온장" → 전 구역 LTR.
-      · 왼쪽 끝 구역 : LTR → 온장이 왼쪽 벽 가장자리부터, 자투리가 개구부 쪽
-      · 개구부 사이 구역: LTR → 온장이 이전 개구부 오른쪽에 밀착, 자투리가 다음 개구부 쪽
-      · 오른쪽 끝 구역: LTR → 온장이 개구부 오른쪽부터, 자투리가 오른쪽 벽 가장자리
-    결과: 맨 왼쪽 모서리에 온장 배치, 자투리는 개구부 쪽·오른쪽 끝으로 밀림.
-    (개구부 없는 벽은 M3 8-1 기준 RTL 유지 — 위 분기 참조)
-
-    반환: (columns, 'LTRC')
-    """
-    offset = STUD if (IS_2P and layer == 2) else 0
-
-    if not ops_xw:
-        cols = _fix_thin_edge_columns(_columns_rtl(0, L, offset))
-        return cols, 'RTL'
-
-    ops = sorted(ops_xw, key=lambda o: o[0])
-    cols = []
-    prev_end = 0.0
-
-    for ox, ow in ops:
-        zone_w = ox - prev_end
-        if zone_w > 0.5:
-            # [M3 9번] 왼쪽 끝 구역도 LTR → 맨 왼쪽 모서리에 온장, 자투리는 개구부 쪽
-            cols += _columns_ltr(prev_end, zone_w, offset)
-        cols.append(('opening', round(ox, 1), round(ow, 1)))
-        prev_end = ox + ow
-
-    right_w = L - prev_end
-    if right_w > 0.5:
-        # 오른쪽 끝 구역: LTR → 자투리가 오른쪽 벽 가장자리
-        cols += _columns_ltr(prev_end, right_w, offset)
-
-    cols = _fix_thin_edge_columns(cols)
-    return cols, 'LTRC'
-
-
-def _col_waste_rate(cols: list) -> float:
-    waste = 0.0
-    board_area = 0.0
-    for t, x, w in cols:
-        if t == 'opening':
-            continue
-        board_area += BW * BH
-        off_w = BW - w
-        if 0 < off_w < MIN_REUSE_W:
-            waste += off_w * BH
-    return waste / max(board_area, 1)
-
-
 # ─────────────────────────────────────────
 # y축 행 계획 (v2와 동일)
 # ─────────────────────────────────────────
@@ -312,53 +148,6 @@ def _rows_in_region(y_start: float, height: float) -> list:
         y_top = y_start + full_count * BH   # 천장 쪽
         rows.append(('cut', round(y_top, 1), remainder))
     return rows
-
-
-def _simple_rows(H: float) -> list:
-    return sorted(_rows_in_region(0, H), key=lambda r: r[1])
-
-
-def build_row_plan(H: float, oh: float, oy: float, col_type: str):
-    if col_type != 'opening':
-        return _simple_rows(H), '-'
-
-    opening_top = oy + oh
-    rows_c = sorted(
-        _rows_in_region(0, oy) +
-        [('opening', round(oy, 1), oh)] +
-        _rows_in_region(opening_top, H - opening_top),
-        key=lambda r: r[1]
-    )
-
-    base = _simple_rows(H)
-    rows_d = []
-    for t, y, h in base:
-        row_top = y + h
-        op_top = oy + oh
-        if y < op_top and row_top > oy:
-            rows_d.append(('opening_overlap', y, h))
-        else:
-            rows_d.append((t, y, h))
-
-    loss_c = _row_waste_rate(rows_c)
-    loss_d = _row_waste_rate(rows_d)
-
-    if loss_d < loss_c - 1e-6:
-        return rows_d, 'D'
-    return rows_c, 'C'
-
-
-def _row_waste_rate(rows: list) -> float:
-    waste = 0.0
-    board_area = 0.0
-    for t, y, h in rows:
-        if t in ('opening', 'opening_overlap'):
-            continue
-        board_area += BW * BH
-        off_h = BH - h
-        if 0 < off_h < MIN_REUSE_H:
-            waste += BW * off_h
-    return waste / max(board_area, 1)
 
 
 # ─────────────────────────────────────────
@@ -425,101 +214,143 @@ def calc_plywood_zones(L: float, H: float,
 
 
 # ─────────────────────────────────────────
-# 셀 처리 (v2와 동일)
+# [M3 4-1 걸치기] 보드 그리드 + 개구부 관통 분류
 # ─────────────────────────────────────────
-def _process_cell_pair(col_w, col_x, h1, y1, h2, y2,
+def _calc_x_breaks(W, ops, bw, off=0):
+    """X축 분할점. 개구부 경계를 삽입하지 않는 순수 보드폭 그리드(걸치기).
+    개구부 있으면 LTR(왼쪽부터, 자투리 오른쪽) / 없으면 RTL(오른쪽부터, 자투리 왼쪽).
+    (승훈 simulator_ui.html calcXBreaks 포팅)"""
+    b = [0.0, W]
+    if ops:
+        x = off
+        while x < W:
+            if x > 0: b.append(x)
+            x += bw
+    else:
+        x = W - off
+        while x > 0:
+            if x < W: b.append(x)
+            x -= bw
+    return sorted({round(v, 1) for v in b if 0 <= v <= W})
+
+
+def _fix_first_thin(brk, min_w):
+    """첫 칸(왼쪽 자투리)이 min_w 미만이면 다음 칸에서 빌려 키움 (RTL용)."""
+    if len(brk) < 3:
+        return brk
+    r = brk[:]
+    first_w = r[1] - r[0]
+    if 0 < first_w < min_w:
+        new_split = r[0] + min_w
+        if new_split < r[2]:
+            r[1] = round(new_split, 1)
+    return r
+
+
+def _fix_last_thin(brk, min_w):
+    """마지막 칸(오른쪽 자투리)이 min_w 미만이면 앞 칸을 줄여 키움 (LTR용)."""
+    if len(brk) < 3:
+        return brk
+    r = brk[:]
+    last_w = r[-1] - r[-2]
+    if 0 < last_w < min_w:
+        new_split = r[-1] - min_w
+        if new_split > r[-3]:
+            r[-2] = round(new_split, 1)
+    return r
+
+
+def _cell_solid(x1, y1, x2, y2, ops):
+    """셀에서 개구부를 제외한 실제 보드 면적.
+    ops = merged_ops [(ox, ow, oh, oy)] (ox=개구부 왼쪽 끝)."""
+    a = (x2 - x1) * (y2 - y1)
+    for ox, ow, oh, oy in ops:
+        o_left, o_right = ox, ox + ow
+        o_top, o_bot = oy, oy + oh
+        ix1, iy1 = max(x1, o_left), max(y1, o_top)
+        ix2, iy2 = min(x2, o_right), min(y2, o_bot)
+        if ix2 > ix1 and iy2 > iy1:
+            a -= (ix2 - ix1) * (iy2 - iy1)
+    return max(0.0, a)
+
+
+def _classify_cell(solid, cw, ch, bw, bh, bx1, by1, bx2, by2, ops, stat):
+    """셀 1개의 절단 형상 분류 (승훈 simulator_ui.html classify() 포팅).
+
+      · skip     : 셀 전체가 개구부 안 → 보드 없음
+      · full     : 온장 (bw×bh)
+      · cut      : 개구부 무관 직선절단 (벽 가장자리·천장 자투리)
+      · edge_cut : 개구부가 보드 모서리에만 걸침 → 직선 1회 절단
+      · notch    : 개구부가 보드 내부를 관통(throughX/throughY) → ㄱ/ㄴ자 2회 절단
+
+    이음매(보드 좌/우 끝)가 개구부 코너에서 CORNER_MIN 이내면 stat['corner_warn'] 증가."""
+    if solid <= 0:
+        return 'skip'
+    is_notch = False
+    has_overlap = False
+    for ox, ow, oh, oy in ops:
+        o_left, o_right = ox, ox + ow
+        o_top, o_bot = oy, oy + oh
+        ix1, iy1 = max(bx1, o_left), max(by1, o_top)
+        ix2, iy2 = min(bx2, o_right), min(by2, o_bot)
+        if ix2 <= ix1 or iy2 <= iy1:
+            continue
+        has_overlap = True
+        through_x = (o_left > bx1 + 2 and o_right < bx2 - 2)
+        through_y = (o_top > by1 + 2 and o_bot < by2 - 2)
+        if through_x or through_y:
+            is_notch = True
+        for seam in (bx1, bx2):
+            if (abs(seam - o_left) < CORNER_MIN or abs(seam - o_right) < CORNER_MIN):
+                stat['corner_warn'] = stat.get('corner_warn', 0) + 1
+                break
+    if is_notch:
+        return 'notch'
+    if has_overlap:
+        return 'edge_cut'
+    if round(cw) == bw and round(ch) == bh:
+        return 'full'
+    return 'cut'
+
+
+def _process_grid_cell(cx, cy, cw, ch, ctype, solid,
                        layer, space_id, floor_id, pool, stat):
-    """개구부 아래(h1) + 위(h2) 보드를 원판 1장에서 재단.
-    h1+h2 <= BH 인 경우에만 호출. 재사용 풀을 먼저 확인하고,
-    둘 다 신규라면 보드 1장으로 낭비 계산. 반환: placement dict 리스트."""
-    out = []
-    found1, lf1 = pool.consume(col_w, h1, space_id, floor_id)
-    found2, lf2 = pool.consume(col_w, h2, space_id, floor_id)
-
-    if found1:
-        stat['reuse_in'] += 1
-        for lf in lf1:
-            if pool.add(lf, space_id, floor_id): stat['reuse_out'] += 1
-        out.append({'layer': layer, 'x': col_x, 'y': y1, 'w': col_w, 'h': h1, 'type': 'reuse'})
-    if found2:
-        stat['reuse_in'] += 1
-        for lf in lf2:
-            if pool.add(lf, space_id, floor_id): stat['reuse_out'] += 1
-        out.append({'layer': layer, 'x': col_x, 'y': y2, 'w': col_w, 'h': h2, 'type': 'reuse'})
-
-    need_new1 = not found1
-    need_new2 = not found2
-
-    if need_new1 and need_new2:
-        # 둘 다 신규 → 원판 1장으로 처리
+    """그리드 셀 1개를 재사용 풀 반영하여 placement dict로 변환.
+    온장/노치는 신규 보드, cut/edge_cut은 재사용 우선."""
+    if ctype == 'full':
         stat['boards'] += 1
-        off_w = round(BW - col_w, 1)
-        if off_w > 0.5:
-            if not pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
-                stat['waste_mm2'] += off_w * BH
-        off_h = round(BH - h1 - h2, 1)
-        if off_h > 0.5:
-            if not pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
-                stat['waste_mm2'] += col_w * off_h
-        out.append({'layer': layer, 'x': col_x, 'y': y1, 'w': col_w, 'h': h1, 'type': 'cut_op'})
-        out.append({'layer': layer, 'x': col_x, 'y': y2, 'w': col_w, 'h': h2, 'type': 'cut_op'})
-    elif need_new1:
-        stat['boards'] += 1
-        off_w = round(BW - col_w, 1)
-        if off_w > 0.5:
-            if not pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
-                stat['waste_mm2'] += off_w * BH
-        off_h = round(BH - h1, 1)
-        if off_h > 0.5:
-            if not pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
-                stat['waste_mm2'] += col_w * off_h
-        out.append({'layer': layer, 'x': col_x, 'y': y1, 'w': col_w, 'h': h1, 'type': 'cut_op'})
-    elif need_new2:
-        stat['boards'] += 1
-        off_w = round(BW - col_w, 1)
-        if off_w > 0.5:
-            if not pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
-                stat['waste_mm2'] += off_w * BH
-        off_h = round(BH - h2, 1)
-        if off_h > 0.5:
-            if not pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
-                stat['waste_mm2'] += col_w * off_h
-        out.append({'layer': layer, 'x': col_x, 'y': y2, 'w': col_w, 'h': h2, 'type': 'cut_op'})
+        return {'layer': layer, 'x': cx, 'y': cy, 'w': cw, 'h': ch, 'type': 'full'}
 
-    return out
-
-
-def _process_cell(col_w, col_x, row_h, row_y, col_t, row_t,
-                  layer, space_id, floor_id, pool, stat):
-    is_full = (abs(col_w - BW) < 0.5 and abs(row_h - BH) < 0.5)
-    found, leftovers = pool.consume(col_w, row_h, space_id, floor_id)
-    if found:
-        stat['reuse_in'] += 1
-        for lf in leftovers:
-            if pool.add(lf, space_id, floor_id):
-                stat['reuse_out'] += 1
-        return {'layer': layer, 'x': col_x, 'y': row_y, 'w': col_w, 'h': row_h, 'type': 'reuse'}
+    # notch는 온장에서 ㄱ/ㄴ자로 도려내므로 재사용 불가(항상 신규). cut/edge_cut만 재사용 시도.
+    if ctype != 'notch':
+        found, leftovers = pool.consume(cw, ch, space_id, floor_id)
+        if found:
+            stat['reuse_in'] += 1
+            for lf in leftovers:
+                if pool.add(lf, space_id, floor_id):
+                    stat['reuse_out'] += 1
+            return {'layer': layer, 'x': cx, 'y': cy, 'w': cw, 'h': ch, 'type': 'reuse'}
 
     stat['boards'] += 1
-    # 오프컷 = 표준보드(BW×BH) − 사용(col_w×row_h) = L자.
-    # 길로틴 분할: 측면 전체높이 스트립(off_w×BH) + 상단 스트립(col_w×off_h).
-    # (기존엔 측면 높이를 row_h로 잡아 off_w×(BH−row_h) 면적이 누락됐었음)
-    off_w = round(BW - col_w, 1)
+    # 측면/상단 스트립 → 재사용 등록 (불가 시 폐기)
+    off_w = round(BW - cw, 1)
     if off_w > 0.5:
         if pool.add({'w': off_w, 'h': BH}, space_id, floor_id):
             stat['reuse_out'] += 1
         else:
             stat['waste_mm2'] += off_w * BH
-
-    off_h = round(BH - row_h, 1)
+    off_h = round(BH - ch, 1)
     if off_h > 0.5:
-        if pool.add({'w': col_w, 'h': off_h}, space_id, floor_id):
+        if pool.add({'w': cw, 'h': off_h}, space_id, floor_id):
             stat['reuse_out'] += 1
         else:
-            stat['waste_mm2'] += col_w * off_h
-
-    return {'layer': layer, 'x': col_x, 'y': row_y, 'w': col_w, 'h': row_h,
-            'type': 'full' if is_full else 'cut'}
+            stat['waste_mm2'] += cw * off_h
+    # 개구부로 도려낸 부분(걸치기 절단) = 폐기
+    op_cut = round(cw * ch - solid, 1)
+    if op_cut > 0.5:
+        stat['waste_mm2'] += op_cut
+    return {'layer': layer, 'x': cx, 'y': cy, 'w': cw, 'h': ch,
+            'type': ctype, 'solid': round(solid, 1)}
 
 
 # ─────────────────────────────────────────
@@ -562,104 +393,42 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
         ox = wall.get('ox', 0); oy = wall.get('oy', 0)
         merged_ops = [(ox, ow, oh, oy)] if (ow and oh) else []
 
-    ops_xw = [(ox, ow) for ox, ow, oh, oy in merged_ops]
+    # 배치 방향: 개구부 있으면 LTR(자투리 오른쪽, M3 9번) / 없으면 RTL(자투리 왼쪽, 8-1)
+    x_case_used = 'LTR' if merged_ops else 'RTL'
 
-    # 최적 y_case 추정
-    best_y = 'C'; best_est = float('inf'); best_xc = 'RTL'
-    for y_case in ('C', 'D'):
-        waste = board_area = 0.0
-        xc_used = 'RTL'
-        for layer in layers:
-            cols, xc = build_column_plan(L, ops_xw, is_ext, layer)
-            xc_used = xc
-            for col_t, col_x, col_w in cols:
-                if col_t == 'opening': continue
-                active_oh = active_oy = 0
-                for op_ox, op_ow, op_oh, op_oy in merged_ops:
-                    if op_ox < col_x + col_w and op_ox + op_ow > col_x:
-                        active_oh = op_oh; active_oy = op_oy; break
-                rows, _ = build_row_plan(H, active_oh, active_oy,
-                                         col_t if active_oh else 'solid')
-                for row_t, row_y, row_h in rows:
-                    if row_t in ('opening', 'opening_overlap'): continue
-                    board_area += BW * BH
-                    off_w = BW - col_w; off_h = BH - row_h
-                    if 0 < off_w < MIN_REUSE_W: waste += off_w * row_h
-                    if 0 < off_h < MIN_REUSE_H: waste += col_w * off_h
-        est = waste / max(board_area, 1)
-        if est < best_est:
-            best_est = est; best_y = y_case; best_xc = xc_used
-
-    # Pool 반영 실행
-    stat = {'boards': 0, 'reuse_in': 0, 'reuse_out': 0, 'waste_mm2': 0.0}
+    # Pool 반영 실행 — [M3 4-1 걸치기] 균일 보드 그리드가 개구부를 가로지름
+    stat = {'boards': 0, 'reuse_in': 0, 'reuse_out': 0, 'waste_mm2': 0.0,
+            'corner_warn': 0}
     placements = []
-    x_case_used = best_xc
     for layer in layers:
-        cols, _ = build_column_plan(L, ops_xw, is_ext, layer)
-        for col_t, col_x, col_w in cols:
-            if col_t == 'opening':
-                # 실제 개구부 y·h 찾기 (전체 높이 대신 실제 문/창 치수 사용)
-                op_oy_actual, op_oh_actual = 0, H
-                for op_ox, op_ow, op_oh_m, op_oy_m in merged_ops:
-                    if op_ox < col_x + col_w and op_ox + op_ow > col_x:
-                        op_oy_actual = op_oy_m
-                        op_oh_actual = op_oh_m
-                        break
-                op_top = op_oy_actual + op_oh_actual
-                # 개구부 폭이 BW보다 넓으면 위/아래 보드도 표준폭으로 분할
-                sub_cols = _split_span(col_x, col_w)
+        offset = STUD if (IS_2P and layer == 2) else 0
+        # X축: 개구부 경계를 삽입하지 않는 순수 보드폭 그리드 (걸치기)
+        x_breaks = _calc_x_breaks(L, merged_ops, BW, offset)
+        x_breaks = (_fix_last_thin(x_breaks, MIN_REUSE_W) if merged_ops
+                    else _fix_first_thin(x_breaks, MIN_REUSE_W))
+        # Y축: 바닥부터 온장, 자투리는 천장 쪽 (M3 2-1·9-1) — 기존 행 분할 유지
+        y_bands = _rows_in_region(0, H)
 
-                above_h = H - op_top
-                below_rows = _rows_in_region(0, op_oy_actual) if op_oy_actual > 0.5 else []
-                above_rows = _rows_in_region(op_top, above_h) if above_h > 0.5 else []
-
-                for sx, sw in sub_cols:
-                    # 아래+위 각 1행씩이고 합이 BH 이하 → 원판 1장 페어링
-                    if (len(below_rows) == 1 and len(above_rows) == 1 and
-                            below_rows[0][2] + above_rows[0][2] <= BH):
-                        _, by, bh = below_rows[0]
-                        _, ay, ah = above_rows[0]
-                        for p in _process_cell_pair(sw, sx, bh, by, ah, ay,
-                                                    layer, space_id, floor_id, pool, stat):
-                            placements.append(p)
-                    else:
-                        # 개구부 아래 보드
-                        for row_t, row_y, row_h in below_rows:
-                            p = _process_cell(sw, sx, row_h, row_y,
-                                              'cut', row_t, layer,
-                                              space_id, floor_id, pool, stat)
-                            if p:
-                                p['type'] = 'cut_op'
-                                placements.append(p)
-                        # 개구부 위 보드
-                        for row_t, row_y, row_h in above_rows:
-                            p = _process_cell(sw, sx, row_h, row_y,
-                                              'cut', row_t, layer,
-                                              space_id, floor_id, pool, stat)
-                            if p:
-                                p['type'] = 'cut_op'
-                                placements.append(p)
-
-                # 개구부 마커
-                placements.append({'layer': layer, 'x': col_x, 'y': op_oy_actual,
-                                   'w': col_w, 'h': op_oh_actual, 'type': 'opening'})
-                continue
-
-            active_oh = active_oy = 0
-            for op_ox, op_ow, op_oh, op_oy in merged_ops:
-                if op_ox < col_x + col_w and op_ox + op_ow > col_x:
-                    active_oh = op_oh; active_oy = op_oy; break
-            rows, _ = build_row_plan(H, active_oh, active_oy,
-                                     col_t if active_oh else 'solid')
-            for row_t, row_y, row_h in rows:
-                if row_t in ('opening', 'opening_overlap'):
-                    placements.append({'layer': layer, 'x': col_x, 'y': row_y,
-                                       'w': col_w, 'h': row_h, 'type': 'opening'})
+        for _row_t, by1, ch in y_bands:
+            by2 = by1 + ch
+            for xi in range(len(x_breaks) - 1):
+                bx1, bx2 = x_breaks[xi], x_breaks[xi + 1]
+                cw = round(bx2 - bx1, 1)
+                if cw < 1:
                     continue
-                p = _process_cell(col_w, col_x, row_h, row_y, col_t, row_t,
-                                  layer, space_id, floor_id, pool, stat)
-                if p:
-                    placements.append(p)
+                solid = _cell_solid(bx1, by1, bx2, by2, merged_ops)
+                ctype = _classify_cell(solid, cw, ch, BW, BH,
+                                       bx1, by1, bx2, by2, merged_ops, stat)
+                if ctype == 'skip':           # 셀 전체가 개구부 안 → 보드 없음
+                    continue
+                placements.append(_process_grid_cell(
+                    bx1, by1, cw, ch, ctype, solid,
+                    layer, space_id, floor_id, pool, stat))
+
+        # 개구부 마커 (도면 빗금용)
+        for op_ox, op_ow, op_oh, op_oy in merged_ops:
+            placements.append({'layer': layer, 'x': op_ox, 'y': op_oy,
+                               'w': op_ow, 'h': op_oh, 'type': 'opening'})
 
     board_area = stat['boards'] * BW * BH
     loss = max(0.0, stat['waste_mm2'] / max(board_area, 1) * 100)
@@ -675,13 +444,14 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
     )
 
     return {
-        'layout'        : x_case_used + best_y,
+        'layout'        : x_case_used + 'C',  # Y배치 항상 C안 (바닥부터 온장, M3 9-1)
         'boards'        : stat['boards'],
         'reuse_in'      : stat['reuse_in'],
         'reuse_out'     : stat['reuse_out'],
         'waste_mm2'     : round(stat['waste_mm2']),
         'loss_pct'      : round(loss, 2),
         'opening_count' : len(merged_ops),
+        'corner_warn'   : stat['corner_warn'],
         'plywood_zones' : plywood_zones,
         'placements'    : placements,
         'L'             : L,
@@ -815,8 +585,10 @@ def _one_layer_svg(placements_l: list, L: float, H: float,
     stroke_map  = {1: '#1d4ed8', 2: '#c2410c'}
     cut_fill    = {1: '#bfdbfe', 2: '#fed7aa'}   # 절단: 온장보다 진한 동색
     reuse_fill  = {1: '#bbf7d0', 2: '#bbf7d0'}   # 재사용: 연초록
-    cut_op_fill = '#fef08a'                        # 개구부 처리 보드: 노란색
-    cut_op_stroke = '#ca8a04'                      # 개구부 처리 보드 테두리: 황갈색
+    edge_fill   = '#fef08a'                        # 직선절단(개구부 모서리): 노란색
+    edge_stroke = '#ca8a04'                        # 직선절단 테두리: 황갈색
+    notch_fill  = '#ede9fe'                         # 노치절단(개구부 관통): 연보라
+    notch_stroke = '#7c3aed'                        # 노치절단 테두리: 보라
 
     fill   = fill_map.get(layer, '#eee')
     stroke = stroke_map.get(layer, '#555')
@@ -869,8 +641,10 @@ def _one_layer_svg(placements_l: list, L: float, H: float,
         # 보드 색상 선택
         if t == 'reuse':
             board_fill, board_stroke = rf, stroke
-        elif t == 'cut_op':
-            board_fill, board_stroke = cut_op_fill, cut_op_stroke
+        elif t == 'notch':
+            board_fill, board_stroke = notch_fill, notch_stroke
+        elif t == 'edge_cut':
+            board_fill, board_stroke = edge_fill, edge_stroke
         elif t == 'cut':
             board_fill, board_stroke = cf, stroke
         else:
@@ -882,7 +656,8 @@ def _one_layer_svg(placements_l: list, L: float, H: float,
         # 치수 라벨
         if w > 32 and h > 16:
             cx, cy = x + w/2, y + h/2 + 4
-            icon = '♻' if t == 'reuse' else ('□' if t == 'cut_op' else ('✂' if t == 'cut' else ''))
+            icon = ('♻' if t == 'reuse' else 'ㄴ' if t == 'notch'
+                    else '□' if t == 'edge_cut' else '✂' if t == 'cut' else '')
             lbl  = f'{icon} {p["w"]:.0f}×{p["h"]:.0f}'
             lines.append(
                 f'<text x="{cx:.0f}" y="{cy:.0f}" text-anchor="middle" '
@@ -928,9 +703,10 @@ def _wall_svg(r: dict, scale_h: int = 210) -> str:
 
     def _stats(lp):
         full  = sum(1 for p in lp if p.get('type') == 'full')
-        cut   = sum(1 for p in lp if p.get('type') == 'cut')
+        cut   = sum(1 for p in lp if p.get('type') in ('cut', 'edge_cut'))
+        notch = sum(1 for p in lp if p.get('type') == 'notch')
         reuse = sum(1 for p in lp if p.get('type') == 'reuse')
-        return full, cut, reuse
+        return full, cut, notch, reuse
 
     _svg_uid_seq[0] += 1
     uid = _svg_uid_seq[0]
@@ -939,12 +715,15 @@ def _wall_svg(r: dict, scale_h: int = 210) -> str:
     tabs = []
     for ln in layers_present:
         st = _stats(by_layer.get(ln, []))
+        notch_lbl = f' · 노치 {st[2]}' if st[2] else ''
         if len(layers_present) == 1:
-            label = f'석고보드 &nbsp;<span class="tstat">온장 {st[0]} · 절단 {st[1]} · 재사용 {st[2]}</span>'
+            label = (f'석고보드 &nbsp;<span class="tstat">'
+                     f'온장 {st[0]} · 절단 {st[1]}{notch_lbl} · 재사용 {st[3]}</span>')
         else:
             offset = f'+{STUD}mm 엇갈림 · ' if ln == 2 else ''
             label = (f'Layer {ln} &nbsp;'
-                     f'<span class="tstat">{offset}온장 {st[0]} · 절단 {st[1]} · 재사용 {st[2]}</span>')
+                     f'<span class="tstat">{offset}온장 {st[0]} · 절단 {st[1]}'
+                     f'{notch_lbl} · 재사용 {st[3]}</span>')
         svg = _one_layer_svg(by_layer.get(ln, []), L, H, ln, scale_h)
         tabs.append(('layer', ln, label, svg))
 
@@ -1107,7 +886,8 @@ def make_opt_html(results: list, total_loss: float,
       <span><i class="sw" style="background:#dbeafe;border:1px solid #1d4ed8"></i>● 온장 (Layer 1)</span>
       <span><i class="sw" style="background:#ffedd5;border:1px solid #c2410c"></i>● 온장 (Layer 2)</span>
       <span><i class="sw" style="background:#bfdbfe;border:1px solid #1d4ed8"></i>✂ 절단</span>
-      <span><i class="sw" style="background:#fef08a;border:1px solid #ca8a04"></i>□ 개구부 처리</span>
+      <span><i class="sw" style="background:#fef08a;border:1px solid #ca8a04"></i>□ 직선절단(개구부)</span>
+      <span><i class="sw" style="background:#ede9fe;border:1px solid #7c3aed"></i>ㄴ 노치절단</span>
       <span><i class="sw" style="background:#bbf7d0;border:1px solid #16a34a"></i>♻ 재사용</span>
       <span><i class="sw" style="background:#f1f5f9;border:1px dashed #94a3b8"></i>개구부</span>
     </div>"""
@@ -1487,7 +1267,8 @@ body{font-family:'Malgun Gothic','나눔고딕',sans-serif;display:flex;flex-dir
       <span><i style="background:#ffedd5;border-color:#c2410c"></i>온장 L2</span>
       <span><i style="background:#bfdbfe;border-color:#1d4ed8"></i>절단 L1</span>
       <span><i style="background:#fed7aa;border-color:#c2410c"></i>절단 L2</span>
-      <span><i style="background:#fef08a;border-color:#ca8a04"></i>개구부처리</span>
+      <span><i style="background:#fef08a;border-color:#ca8a04"></i>직선절단(개구부)</span>
+      <span><i style="background:#ede9fe;border-color:#7c3aed"></i>ㄴ노치절단</span>
       <span><i style="background:#bbf7d0;border-color:#16a34a"></i>♻재사용</span>
       <span><i style="background:#e2e8f0;border-color:#94a3b8"></i>개구부</span>
     </div>
@@ -1514,7 +1295,8 @@ var cur=null,combo=DEFKEY,layer=1,step=0,timer=null,playing=false,speed=350;
 var CMAP={
   full_1:{f:'#dbeafe',s:'#1d4ed8'},full_2:{f:'#ffedd5',s:'#c2410c'},
   cut_1:{f:'#bfdbfe',s:'#1d4ed8'},cut_2:{f:'#fed7aa',s:'#c2410c'},
-  cut_op_1:{f:'#fef08a',s:'#ca8a04'},cut_op_2:{f:'#fef08a',s:'#ca8a04'},
+  edge_cut_1:{f:'#fef08a',s:'#ca8a04'},edge_cut_2:{f:'#fef08a',s:'#ca8a04'},
+  notch_1:{f:'#ede9fe',s:'#7c3aed'},notch_2:{f:'#ede9fe',s:'#7c3aed'},
   reuse_1:{f:'#bbf7d0',s:'#16a34a'},reuse_2:{f:'#bbf7d0',s:'#16a34a'},
   opening:{f:'#e2e8f0',s:'#94a3b8'}
 };
@@ -1623,21 +1405,22 @@ function render(){
   p.push('<rect x="0" y="0" width="'+sw+'" height="'+sh+'" fill="#f8fafc" stroke="'+sc2+'" stroke-width="2"/>');
   var x=0;
   while(x<=L+0.5){var gx=Math.round(x*sc);p.push('<line x1="'+gx+'" y1="0" x2="'+gx+'" y2="'+sh+'" stroke="#d1d5db" stroke-width="0.6" stroke-dasharray="4 3"/>');x+=STUD;}
-  if(d&&d.ops){d.ops.forEach(function(o){
-    var ox=Math.round(o.x*sc),oy=Math.round((H-o.y-o.h)*sc),ow=Math.round(o.w*sc),oh=Math.round(o.h*sc);
-    p.push('<rect x="'+ox+'" y="'+oy+'" width="'+ow+'" height="'+oh+'" fill="#e2e8f0" stroke="#94a3b8" stroke-dasharray="5 3" stroke-width="1"/>');
-    if(ow>28&&oh>16)p.push('<text x="'+(ox+ow/2)+'" y="'+(oy+oh/2+4)+'" text-anchor="middle" font-size="9" fill="#94a3b8">개구부</text>');
-  });}
+  // [걸치기] 보드가 개구부를 가로지르므로 보드 먼저, 개구부 빗금을 그 위에 덮어 그림
   vis.forEach(function(pl){
     var px=Math.round(pl.x*sc),py=Math.round((H-pl.y-pl.h)*sc);
     var pw=Math.max(1,Math.round(pl.w*sc)),ph=Math.max(1,Math.round(pl.h*sc));
     var t=pl.type||'full',c=CMAP[ck(t)]||CMAP.full_1;
     p.push('<rect x="'+px+'" y="'+py+'" width="'+pw+'" height="'+ph+'" fill="'+c.f+'" stroke="'+c.s+'" stroke-width="1"/>');
     if(pw>36&&ph>18){
-      var ic=t==='reuse'?'♻':(t.indexOf('cut')>=0?'✂':'');
+      var ic=t==='reuse'?'♻':(t==='notch'?'ㄴ':(t.indexOf('cut')>=0?'✂':''));
       p.push('<text x="'+(px+pw/2)+'" y="'+(py+ph/2+4)+'" text-anchor="middle" font-size="9" fill="'+c.s+'" font-weight="600">'+ic+' '+pl.w+'×'+pl.h+'</text>');
     }
   });
+  if(d&&d.ops){d.ops.forEach(function(o){
+    var ox=Math.round(o.x*sc),oy=Math.round((H-o.y-o.h)*sc),ow=Math.round(o.w*sc),oh=Math.round(o.h*sc);
+    p.push('<rect x="'+ox+'" y="'+oy+'" width="'+ow+'" height="'+oh+'" fill="#e2e8f0" stroke="#94a3b8" stroke-dasharray="5 3" stroke-width="1"/>');
+    if(ow>28&&oh>16)p.push('<text x="'+(ox+ow/2)+'" y="'+(oy+oh/2+4)+'" text-anchor="middle" font-size="9" fill="#94a3b8">개구부</text>');
+  });}
   p.push('<text x="'+(sw/2)+'" y="'+(sh+16)+'" text-anchor="middle" font-size="10" fill="#64748b">L='+L+' × H='+H+'mm · '+(cur.is_external?'외기':'내기')+(d?' · '+d.layout:'')+'</text>');
   p.push('</svg>');
   wrap.innerHTML=p.join('');
