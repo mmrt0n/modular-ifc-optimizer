@@ -48,8 +48,8 @@ class ReusePool:
     자투리 보관소.
     [M3변경] 폭 ≥ MIN_REUSE_W(300), 높이 ≥ MIN_REUSE_H(450) 인 경우만 등록.
     [공장 단위] 모듈러(공장 제작) 방식 — 프로젝트 전체를 한 배치로 보고
-    층(floor) 경계 없이 전역 재사용. 매칭 우선순위만 같은 공간 → 같은 층 →
-    전체 순으로 둠(운반 효율). 층이 달라도 재사용 가능.
+    층(floor)·공간(space) 경계 없이 전역 재사용. 한 배치라 위치 우선순위는
+    의미 없으므로, 크기 충족 자투리 중 면적이 가장 작은(딱 맞는) 것부터 소비.
     """
     MAX_TOTAL = 5000  # 전역 풀 상한 (과도 누적 방지)
 
@@ -71,18 +71,8 @@ class ReusePool:
         if not candidates:
             return None, []
 
-        # 우선순위: 같은 공간(0) → 같은 층(1) → 전체(2), 동순위면 면적 작은 것
-        def _rank(ip):
-            _, p = ip
-            if p['space_id'] == space_id:
-                pr = 0
-            elif p['floor_id'] == floor_id:
-                pr = 1
-            else:
-                pr = 2
-            return (pr, p['w'] * p['h'])
-
-        idx, chosen = min(candidates, key=_rank)
+        # [공장 단위] 위치 우선순위 없음 — 면적이 가장 작은(딱 맞는) 자투리부터 소비
+        idx, chosen = min(candidates, key=lambda ip: ip[1]['w'] * ip[1]['h'])
         self.items.pop(idx)
         leftovers = self._split_leftover(chosen, need_w, need_h)
         return chosen, leftovers
