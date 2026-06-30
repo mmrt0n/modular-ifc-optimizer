@@ -84,7 +84,7 @@ body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#f4f6f9;c
   <!-- PART 2 -->
   <div class="sec">② 배치 최적화 알고리즘 <span class="tag">gypsum_optimizer_v3.py</span></div>
   <div class="flow">
-    <div class="box b-proc"><div class="t">벽 정렬 + 재사용 풀 생성</div><div class="s">층별 → 면적 큰 순 정렬</div><div class="fn">optimize_building() · ReusePool()</div></div>
+    <div class="box b-proc"><div class="t">벽 정렬 + 재사용 풀 생성</div><div class="s">층별 → 면적 큰 순 정렬 · 풀은 공장 단위 전역</div><div class="fn">optimize_building() · ReusePool()</div></div>
     <div class="arr"></div>
     <div class="loop">
       <div class="lh">FOR 각 벽 → optimize_wall()</div>
@@ -111,7 +111,7 @@ body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;background:#f4f6f9;c
           <div class="flow">
             <div class="box b-dec" style="width:300px"><div class="t">◇ 재사용 풀에 맞는 자투리?</div><div class="s">폭≥300 &amp; 높이≥450mm</div></div>
             <div class="arrlbl">예 ↓ &nbsp;|&nbsp; 아니오 → 온장 절단</div>
-            <div class="box b-core" style="width:300px"><div class="t">♻ 재사용 적용 / 자투리 등록</div><div class="s">같은 공간 → 같은 층 우선</div><div class="fn">pool.consume() · pool.add()</div></div>
+            <div class="box b-core" style="width:300px"><div class="t">♻ 재사용 적용 / 자투리 등록</div><div class="s">공장 단위 전역 · 우선순위 공간→층→전체</div><div class="fn">pool.consume() · pool.add()</div></div>
           </div>
         </div>
         <div class="arr"></div>

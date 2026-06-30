@@ -47,44 +47,45 @@ class ReusePool:
     """
     자투리 보관소.
     [M3변경] 폭 ≥ MIN_REUSE_W(300), 높이 ≥ MIN_REUSE_H(450) 인 경우만 등록.
+    [공장 단위] 모듈러(공장 제작) 방식 — 프로젝트 전체를 한 배치로 보고
+    층(floor) 경계 없이 전역 재사용. 매칭 우선순위만 같은 공간 → 같은 층 →
+    전체 순으로 둠(운반 효율). 층이 달라도 재사용 가능.
     """
-    def __init__(self):
-        self.by_space = {}
-        self.by_floor = {}
+    MAX_TOTAL = 5000  # 전역 풀 상한 (과도 누적 방지)
 
-    MAX_PER_BUCKET = 30
+    def __init__(self):
+        self.items = []   # 전역 단일 풀
 
     def add(self, piece: dict, space_id: str, floor_id: str) -> bool:
-        # [변경] 비대칭 최소 규격 체크
+        # 비대칭 최소 규격 체크
         if piece['w'] < MIN_REUSE_W or piece['h'] < MIN_REUSE_H:
             return False
-        bucket = self.by_floor.setdefault(floor_id, [])
-        if len(bucket) >= self.MAX_PER_BUCKET:
+        if len(self.items) >= self.MAX_TOTAL:
             return False
-        item = {**piece, 'space_id': space_id, 'floor_id': floor_id}
-        self.by_space.setdefault(space_id, []).append(item)
-        bucket.append(item)
+        self.items.append({**piece, 'space_id': space_id, 'floor_id': floor_id})
         return True
 
     def consume(self, need_w, need_h, space_id, floor_id):
-        for pool in [self.by_space.get(space_id, []),
-                     self.by_floor.get(floor_id, [])]:
-            candidates = [(i, p) for i, p in enumerate(pool)
-                          if p['w'] >= need_w and p['h'] >= need_h]
-            if not candidates:
-                continue
-            idx, chosen = min(candidates, key=lambda ip: ip[1]['w'] * ip[1]['h'])
-            pool.pop(idx)
-            self._remove_from_other(chosen, space_id, floor_id)
-            leftovers = self._split_leftover(chosen, need_w, need_h)
-            return chosen, leftovers
-        return None, []
+        candidates = [(i, p) for i, p in enumerate(self.items)
+                      if p['w'] >= need_w and p['h'] >= need_h]
+        if not candidates:
+            return None, []
 
-    def _remove_from_other(self, piece, space_id, floor_id):
-        for pool in [self.by_floor.get(floor_id, []),
-                     self.by_space.get(space_id, [])]:
-            if piece in pool:
-                pool.remove(piece)
+        # 우선순위: 같은 공간(0) → 같은 층(1) → 전체(2), 동순위면 면적 작은 것
+        def _rank(ip):
+            _, p = ip
+            if p['space_id'] == space_id:
+                pr = 0
+            elif p['floor_id'] == floor_id:
+                pr = 1
+            else:
+                pr = 2
+            return (pr, p['w'] * p['h'])
+
+        idx, chosen = min(candidates, key=_rank)
+        self.items.pop(idx)
+        leftovers = self._split_leftover(chosen, need_w, need_h)
+        return chosen, leftovers
 
     def _split_leftover(self, piece, used_w, used_h):
         leftovers = []
@@ -97,7 +98,7 @@ class ReusePool:
         return leftovers
 
     def total(self):
-        return sum(len(v) for v in self.by_space.values())
+        return len(self.items)
 
 
 # ─────────────────────────────────────────
