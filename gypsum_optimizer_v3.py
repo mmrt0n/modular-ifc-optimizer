@@ -484,9 +484,29 @@ def optimize_building(walls: list) -> tuple:
             total_waste      += res['waste_mm2']
             total_board_area += res['boards'] * BW * BH
 
+    # 미사용 재사용 풀 잔여 → 실제 손실로 계상
+    leftover_waste = sum(p['w'] * p['h'] for p in pool.items)
+    leftover_count = len(pool.items)
+    total_waste += leftover_waste
     total_loss = max(0.0, total_waste / max(total_board_area, 1) * 100)
-    print(f"  → 전체 로스율: {total_loss:.2f}%")
-    return results, total_loss
+
+    # 발주량 집계
+    total_new_boards = sum(r['boards'] for r in results)        # 신규 보드 수
+    total_reuse_in   = sum(r['reuse_in'] for r in results)      # 재사용 소비 수
+    PALETTE = 990 if BW == 900 else 100                         # 석고보드 990, 합판 100
+    import math as _m
+    palettes = _m.ceil(total_new_boards / PALETTE) if total_new_boards else 0
+
+    print(f"  → 전체 로스율: {total_loss:.2f}%  (미사용 자투리 {leftover_count}개 포함)")
+    print(f"  → 신규보드 {total_new_boards}장  재사용 {total_reuse_in}장  발주 {palettes}팔레트")
+    return results, total_loss, {
+        'new_boards'     : total_new_boards,
+        'reuse_in'       : total_reuse_in,
+        'leftover_count' : leftover_count,
+        'leftover_waste_mm2': round(leftover_waste),
+        'palettes'       : palettes,
+        'palette_size'   : PALETTE,
+    }
 
 
 # ─────────────────────────────────────────
@@ -759,9 +779,36 @@ def _cut_list(r: dict) -> list:
     return items
 
 
+def _order_card(order_info, surcharge_pct, surcharge_boards):
+    if not order_info:
+        if surcharge_pct > 0 and surcharge_boards:
+            return (f'<div class="card warn"><div class="val">{surcharge_boards}</div>'
+                    f'<div class="lbl">할증 발주량 ({surcharge_pct:.0f}%)</div></div>')
+        return ''
+    base = order_info['new_boards']
+    palettes = order_info['palettes']
+    palette_size = order_info['palette_size']
+    surplus = order_info.get('leftover_count', 0)
+    if surcharge_pct > 0:
+        ordered = surcharge_boards if surcharge_boards else math.ceil(base * (1 + surcharge_pct / 100))
+        pal = math.ceil(ordered / palette_size) if ordered else 0
+        return (f'<div class="card warn"><div class="val">{ordered}장 / {pal}팔레트</div>'
+                f'<div class="lbl">발주량 (할증 {surcharge_pct:.0f}%)<br>'
+                f'<span style="font-size:10px;opacity:.7">'
+                f'순수 {base}장 × {1+surcharge_pct/100:.2f} / 팔레트 {palette_size}장'
+                f'{"  ⚠미사용자투리 "+str(surplus)+"개" if surplus else ""}'
+                f'</span></div></div>')
+    return (f'<div class="card warn"><div class="val">{base}장 / {palettes}팔레트</div>'
+            f'<div class="lbl">발주량<br>'
+            f'<span style="font-size:10px;opacity:.7">팔레트 {palette_size}장 기준'
+            f'{"  ⚠미사용자투리 "+str(surplus)+"개" if surplus else ""}'
+            f'</span></div></div>')
+
+
 def make_opt_html(results: list, total_loss: float,
                   ifc_path: str, mat: str = "석고보드", ply: int = 1,
-                  surcharge_pct: float = 0.0, direction: str = '세로') -> str:
+                  surcharge_pct: float = 0.0, direction: str = '세로',
+                  order_info: dict = None) -> str:
     from datetime import datetime
     import os
 
@@ -1004,14 +1051,14 @@ def make_opt_html(results: list, total_loss: float,
 
 <div class="summary">
   <div class="card"><div class="val">{len(results)}</div><div class="lbl">처리 벽 수</div></div>
-  <div class="card"><div class="val">{total_boards}</div><div class="lbl">총 사용 온장 (장)</div></div>
-  <div class="card ok"><div class="val">{total_reuse}</div><div class="lbl">재사용 = 발주 절감 (장)<br><span style="font-size:10px;opacity:.7">신규 대비 {(total_reuse/(total_boards+total_reuse)*100) if (total_boards+total_reuse)>0 else 0:.1f}% 절감</span></div></div>
+  <div class="card"><div class="val">{total_boards}</div><div class="lbl">신규 보드 사용 (장)</div></div>
+  <div class="card ok"><div class="val">{total_reuse}</div><div class="lbl">재사용 절감 (장)<br><span style="font-size:10px;opacity:.7">신규 대비 {(total_reuse/(total_boards+total_reuse)*100) if (total_boards+total_reuse)>0 else 0:.1f}% 절감</span></div></div>
   <div class="card {'bad' if total_loss>10 else ('warn' if total_loss>5 else 'ok')}">
-    <div class="val">{total_loss:.2f}%</div><div class="lbl">전체 로스율</div></div>
+    <div class="val">{total_loss:.2f}%</div><div class="lbl">전체 로스율<br><span style="font-size:10px;opacity:.7">미사용 자투리 포함</span></div></div>
   <div class="card warn"><div class="val">{total_waste_m2:.2f}</div><div class="lbl">폐기량 (㎡)</div></div>
   <div class="card"><div class="val">{cut_count}</div><div class="lbl">절단 횟수</div></div>
   <div class="card"><div class="val">{plywood_total}</div><div class="lbl">합판 보강 (곳)</div></div>
-  {f'<div class="card warn"><div class="val">{surcharge_boards}</div><div class="lbl">할증 발주량 ({surcharge_pct:.0f}%)<br><span style="font-size:10px;opacity:.7">{total_boards}장 × {1+surcharge_pct/100:.2f}</span></div></div>' if surcharge_pct > 0 else ''}
+  {_order_card(order_info, surcharge_pct, surcharge_boards)}
 </div>
 
 {legend}
@@ -1062,7 +1109,7 @@ if __name__ == '__main__':
     print("석고보드 최적화 v3 — M3시스템즈 시공방식 반영")
     print("=" * 60)
 
-    results, total_loss = optimize_building(sample_walls)
+    results, total_loss, order_info = optimize_building(sample_walls)
 
     print(f"\n{'ID':<6} {'층':<4} {'면':<4} {'배치':>5} {'온장':>4} "
           f"{'재사용':>5} {'로스율':>7} {'합판보강':>10}")

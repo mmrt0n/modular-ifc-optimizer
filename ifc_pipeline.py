@@ -493,15 +493,17 @@ def main():
 
         prog.step(6, (f"{len(opt_walls)}개 벽 계산 중 — "
                       f"자재:{mat}  방향:세로  재사용={'활성' if reuse else '비활성'}"))
-        results, total_loss = opt.optimize_building(opt_walls)
+        results, total_loss, order_info = opt.optimize_building(opt_walls)
 
         # ── STEP 8: 최적화 HTML 생성 ──────────────────
         prog.step(7, f"전체 로스율 {total_loss:.2f}% / "
-                     f"온장 {sum(r['boards'] for r in results)}장")
+                     f"신규보드 {order_info['new_boards']}장 / "
+                     f"발주 {order_info['palettes']}팔레트")
         suffix   = "" if reuse else "_노재사용"
         opt_html = base + f"_{mat}_1P최적화결과{suffix}.html"
         opt_txt  = opt.make_opt_html(results, total_loss, ifc_path, mat, 1,
-                                     surcharge_pct=surcharge, direction='세로')
+                                     surcharge_pct=surcharge, direction='세로',
+                                     order_info=order_info)
         with open(opt_html, "w", encoding="utf-8") as f:
             f.write(opt_txt)
         print(f"✓ 최적화 HTML 저장: {opt_html}")

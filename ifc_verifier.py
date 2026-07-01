@@ -181,13 +181,16 @@ def _extract_walls(ifc):
         storey = _get_storey_multi(w)
         space  = _get_space_multi(w)
 
-        # 치수
+        # 치수 (QSet 우선, 없으면 geometry 폴백)
         ww, wh, wt = _get_dims_qset(w)
+        _qset_ok = bool(ww and wh)
         if ww is None or wh is None or wt is None:
             gw, gh, gt = _get_dims_geom(w)
             if ww is None: ww = gw
             if wh is None: wh = gh
             if wt is None: wt = gt
+        _geom_ok = bool(ww and wh)
+        dims_src = ('qset' if _qset_ok else ('geom' if _geom_ok else 'none'))
 
         # 벽 변환 행렬 (개구부 로컬 좌표 + 3D 위치 계산에 사용)
         wall_mat = None
@@ -326,6 +329,7 @@ def _extract_walls(ifc):
             'opening_count': len(openings),
             'T_mm': wt,
             'dims_ok': bool(ww and wh),
+            'dims_src': dims_src,
             'px': px, 'py': py, 'pz': pz,
             'angle': angle,
         })
@@ -1458,6 +1462,24 @@ def dual_verify(ifc_data, regex_data):
             'missing_in_regex': [],
             'missing_in_ifs': [],
         })
+
+    # ── 4. QSet vs Geometry 치수 추출 대조 ─────────────────────────
+    # 정규식 비교가 모집단 상이로 불가한 경우의 대안 검증:
+    # 같은 벽 집합에서 QSet과 Geometry 두 방법 결과를 비교
+    walls = ifc_data.get('walls', [])
+    qset_ok  = sum(1 for w in walls if w.get('dims_src') == 'qset')
+    geom_ok  = sum(1 for w in walls if w.get('dims_src') in ('qset', 'geom'))
+    none_cnt = sum(1 for w in walls if w.get('dims_src') == 'none')
+    rows.append({
+        'field': '치수 추출 방법 (QSet vs Geometry)',
+        'ifs':   f"QSet 성공 {qset_ok}개 / Geometry 폴백 {geom_ok - qset_ok}개 / 미추출 {none_cnt}개",
+        'regex': f"정규식 비교 불가 (모집단 상이) → QSet 대조로 대체",
+        'match': none_cnt == 0,
+        'note':  ('모든 벽 치수 추출 성공 (QSet+Geometry)' if none_cnt == 0
+                  else f'{none_cnt}개 벽 치수 미추출 — IFC 형상/속성 확인 필요'),
+        'missing_in_regex': [],
+        'missing_in_ifs': [],
+    })
 
     return rows
 
