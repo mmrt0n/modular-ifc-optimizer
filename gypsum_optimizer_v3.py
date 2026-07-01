@@ -216,35 +216,17 @@ def calc_plywood_zones(L: float, H: float,
 # ─────────────────────────────────────────
 # [M3 4-1 걸치기] 보드 그리드 + 개구부 관통 분류
 # ─────────────────────────────────────────
-def _calc_x_breaks(W, ops, bw, off=0):
+def _calc_x_breaks(W, bw, off=0):
     """X축 분할점. 개구부 경계를 삽입하지 않는 순수 보드폭 그리드(걸치기).
-    개구부 있으면 LTR(왼쪽부터, 자투리 오른쪽) / 없으면 RTL(오른쪽부터, 자투리 왼쪽).
+    항상 LTR(왼쪽부터 온장, 자투리는 오른쪽 끝) — M3 2-2 가로 부착순서(왼쪽→오른쪽).
+    개구부 유무와 무관하게 동일(개구부 없는 벽은 방향에 따른 로스율 차이 없음).
     (승훈 simulator_ui.html calcXBreaks 포팅)"""
     b = [0.0, W]
-    if ops:
-        x = off
-        while x < W:
-            if x > 0: b.append(x)
-            x += bw
-    else:
-        x = W - off
-        while x > 0:
-            if x < W: b.append(x)
-            x -= bw
+    x = off
+    while x < W:
+        if x > 0: b.append(x)
+        x += bw
     return sorted({round(v, 1) for v in b if 0 <= v <= W})
-
-
-def _fix_first_thin(brk, min_w):
-    """첫 칸(왼쪽 자투리)이 min_w 미만이면 다음 칸에서 빌려 키움 (RTL용)."""
-    if len(brk) < 3:
-        return brk
-    r = brk[:]
-    first_w = r[1] - r[0]
-    if 0 < first_w < min_w:
-        new_split = r[0] + min_w
-        if new_split < r[2]:
-            r[1] = round(new_split, 1)
-    return r
 
 
 def _fix_last_thin(brk, min_w):
@@ -393,8 +375,9 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
         ox = wall.get('ox', 0); oy = wall.get('oy', 0)
         merged_ops = [(ox, ow, oh, oy)] if (ow and oh) else []
 
-    # 배치 방향: 개구부 있으면 LTR(자투리 오른쪽, M3 9번) / 없으면 RTL(자투리 왼쪽, 8-1)
-    x_case_used = 'LTR' if merged_ops else 'RTL'
+    # 배치 방향: 전 벽 LTR 통일 — 왼쪽 하단부터 온장, 자투리는 오른쪽 끝
+    # (M3 2-2 가로 부착순서 왼쪽→오른쪽. 개구부 없는 벽도 로스율 동일하므로 통일)
+    x_case_used = 'LTR'
 
     # Pool 반영 실행 — [M3 4-1 걸치기] 균일 보드 그리드가 개구부를 가로지름
     stat = {'boards': 0, 'reuse_in': 0, 'reuse_out': 0, 'waste_mm2': 0.0,
@@ -402,10 +385,9 @@ def optimize_wall(wall: dict, pool: ReusePool) -> dict:
     placements = []
     for layer in layers:
         offset = STUD if (IS_2P and layer == 2) else 0
-        # X축: 개구부 경계를 삽입하지 않는 순수 보드폭 그리드 (걸치기)
-        x_breaks = _calc_x_breaks(L, merged_ops, BW, offset)
-        x_breaks = (_fix_last_thin(x_breaks, MIN_REUSE_W) if merged_ops
-                    else _fix_first_thin(x_breaks, MIN_REUSE_W))
+        # X축: 개구부 경계를 삽입하지 않는 순수 보드폭 그리드 (걸치기, LTR)
+        x_breaks = _calc_x_breaks(L, BW, offset)
+        x_breaks = _fix_last_thin(x_breaks, MIN_REUSE_W)
         # Y축: 바닥부터 온장, 자투리는 천장 쪽 (M3 2-1·9-1) — 기존 행 분할 유지
         y_bands = _rows_in_region(0, H)
 

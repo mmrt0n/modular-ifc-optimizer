@@ -1451,13 +1451,15 @@ def dual_verify(ifc_data, regex_data):
                     if ifs_st['count'] else '-')
         re_disp  = (f"avg {re_st['avg']}mm ({re_st['count']}개)"
                     if re_st.get('count') else '-')
-        note = (f"참고용 — IfcWall 기준({ifs_st.get('count',0)}개) vs "
-                f"전체 IFC 요소({re_st.get('count',0)}개) 비교는 모집단 상이")
+        note = (f"비교 불가 — 정규식은 전체 IFC 요소({re_st.get('count',0)}개, 슬래브·기둥 포함), "
+                f"ifcopenshell은 IfcWall({ifs_st.get('count',0)}개)만 대상이라 모집단이 다름. "
+                f"치수 신뢰도는 아래 QSet↔형상 대조로 검증.")
         rows.append({
             'field': label,
             'ifs':   ifs_disp,
             'regex': re_disp,
-            'match': True,
+            'match': False,   # 집계 제외 (na=True)
+            'na':    True,    # 비교 불가 — 신뢰도 계산에서 빼고 회색 표시
             'note':  note,
             'missing_in_regex': [],
             'missing_in_ifs': [],
@@ -1489,23 +1491,30 @@ def _make_dual_html(dual):
     if not dual:
         return '<div class="note">이중 추출 검증 데이터 없음</div>'
 
-    n_match   = sum(1 for r in dual if r['match'])
-    n_total   = len(dual)
+    rated     = [r for r in dual if not r.get('na')]   # 비교 가능한 항목만 집계
+    n_na      = sum(1 for r in dual if r.get('na'))
+    n_match   = sum(1 for r in rated if r['match'])
+    n_total   = len(rated)
     ratio     = n_match / n_total if n_total else 0
     all_match = n_match == n_total
     trust_color = '#2e7d32' if all_match else ('#f57f17' if ratio >= 0.8 else '#c62828')
     trust_label = '완전 일치 — 고신뢰' if all_match else ('부분 불일치 — 주의' if ratio >= 0.8 else '불일치 — 검토 필요')
     trust_icon  = '✅' if all_match else ('⚠' if ratio >= 0.8 else '❌')
+    na_box = (f'<div class="stat-box" style="border-top:3px solid #888">'
+              f'<div class="num" style="color:#888">{n_na}</div><div class="lbl">비교 불가</div></div>'
+              if n_na else '')
 
     summary = (
         f'<div class="stat-grid" style="margin-bottom:16px">'
         f'<div class="stat-box" style="border-top:3px solid {trust_color};min-width:260px">'
         f'<div class="num" style="color:{trust_color};font-size:1.2rem">{trust_icon} {trust_label}</div>'
-        f'<div class="lbl">두 방법 항목 일치: {n_match} / {n_total}개</div></div>'
+        f'<div class="lbl">비교 가능 항목 일치: {n_match} / {n_total}개'
+        + (f' (비교 불가 {n_na}개 제외)' if n_na else '') + '</div></div>'
         f'<div class="stat-box" style="border-top:3px solid #2e7d32">'
         f'<div class="num" style="color:#2e7d32">{n_match}</div><div class="lbl">일치</div></div>'
         f'<div class="stat-box" style="border-top:3px solid #c62828">'
         f'<div class="num" style="color:#c62828">{n_total - n_match}</div><div class="lbl">불일치</div></div>'
+        f'{na_box}'
         f'</div>'
     )
 
@@ -1524,9 +1533,12 @@ def _make_dual_html(dual):
     rows_html = ""
     guid_detail_html = ""
     for r in dual:
-        c  = '#2e7d32' if r['match'] else '#c62828'
-        bg = '#e8f5e9' if r['match'] else '#ffebee'
-        ic = '✓ 일치' if r['match'] else '✗ 불일치'
+        if r.get('na'):
+            c  = '#888'; bg = '#f5f5f5'; ic = '— 비교 불가'
+        else:
+            c  = '#2e7d32' if r['match'] else '#c62828'
+            bg = '#e8f5e9' if r['match'] else '#ffebee'
+            ic = '✓ 일치' if r['match'] else '✗ 불일치'
         rows_html += (
             f'<tr style="background:{bg}">'
             f'<td>{r["field"]}</td>'
